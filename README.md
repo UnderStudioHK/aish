@@ -58,6 +58,7 @@ prompt-dependent.
 | Command timeout | `AISH_CMD_TIMEOUT` | `2h` | per command |
 | LLM call timeout | `AISH_LLM_TIMEOUT` | `2m` | per model request |
 | Confirm policy | `AISH_CONFIRM` | `safe-auto` | `safe-auto` / `always` / `never` |
+| Narrate results | `AISH_NARRATE` | `0` | print the model's explanation after commands (default: command output speaks for itself) |
 | Server host/port | `AISH_LLM_HOST` / `AISH_LLM_PORT` | `127.0.0.1` / `8081` | llama-server endpoint |
 | Model server ctx | `AISH_LLM_CTX` | `32768` | context length passed to llama-server |
 | Server binary | `AISH_LLM_BIN` | `~/tools/llama-b12034/llama-server` | llama-server executable |

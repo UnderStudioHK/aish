@@ -135,6 +135,26 @@ func (d *Director) RunCaptured(ctx context.Context, line string) (string, int, e
 	return w.(*cappedBuffer).String(), code, err
 }
 
+// RunTee runs a command with stdout/stderr streamed to the terminal and
+// simultaneously captured (capped) so the model can see it too. stdin stays
+// attached. Returns (capturedOutput, exitCode, err).
+func (d *Director) RunTee(ctx context.Context, line string) (string, int, error) {
+	cap := newCappedBuffer(captureLimit)
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", line)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = io.MultiWriter(os.Stdout, cap)
+	cmd.Stderr = io.MultiWriter(os.Stderr, cap)
+	err := cmd.Run()
+	d.LastLine = line
+	code := 0
+	if ee, ok := err.(*exec.ExitError); ok {
+		code = ee.ExitCode()
+	} else if err != nil {
+		code = -1
+	}
+	return cap.String(), code, err
+}
+
 type cappedBuffer struct {
 	sb   strings.Builder
 	used int

@@ -291,6 +291,7 @@ func (r *Repl) intentLoop(request string) int {
 
 	start := time.Now()
 	var lastContent string
+	executedAny := false
 	debugDump := os.Getenv("AISH_DEBUG") != ""
 	dump := func(stage string, msgs []llm.Message) {
 		if !debugDump {
@@ -300,7 +301,9 @@ func (r *Repl) intentLoop(request string) int {
 		_ = os.WriteFile("/tmp/opencode/aish_dbg_"+stage+".json", b, 0o644)
 	}
 	defer func() {
-		fmt.Fprintf(os.Stderr, "%s[%s model time]%s\n", cDim, time.Since(start).Round(100*time.Millisecond), cNorm)
+		if debugDump {
+			fmt.Fprintf(os.Stderr, "%s[%s model time]%s\n", cDim, time.Since(start).Round(100*time.Millisecond), cNorm)
+		}
 	}()
 
 	for step := 0; step < r.cfg.MaxSteps; step++ {
@@ -314,7 +317,13 @@ func (r *Repl) intentLoop(request string) int {
 		}
 		if strings.TrimSpace(asMsg.Content) != "" {
 			lastContent = llm.Sanitize(asMsg.Content)
-			fmt.Printf("%s%s%s\n", cYell, lastContent, cNorm)
+			// Commentary accompanying tool calls (e.g. a consequence
+			// warning) is always worth showing. A pure final answer after
+			// commands already printed their own output is noise: keep it
+			// only when narration was requested.
+			if len(asMsg.ToolCalls) > 0 || !executedAny || r.cfg.Narrate {
+				fmt.Printf("%s%s%s\n", cYell, lastContent, cNorm)
+			}
 			if len(asMsg.ToolCalls) == 0 {
 				r.remember(request, lastContent)
 				return r.lastCode
@@ -341,8 +350,9 @@ func (r *Repl) intentLoop(request string) int {
 				break
 			}
 			cctx, ccancel := context.WithTimeout(context.Background(), r.cfg.CmdTimeout)
-			out, code, _ := r.dir.RunCaptured(cctx, cmd)
+			out, code, _ := r.dir.RunTee(cctx, cmd)
 			ccancel()
+			executedAny = true
 			msgs = append(msgs, llm.Message{Role: "tool", ToolCallID: tc.ID,
 				Content: fmt.Sprintf("exit_code=%d\n%s", code, out)})
 			r.lastCode = code
@@ -357,7 +367,9 @@ func (r *Repl) intentLoop(request string) int {
 			return r.lastCode
 		}
 	}
-	fmt.Fprintf(os.Stderr, "%saish: stopped after %d steps%s\n", cDim, r.cfg.MaxSteps, cNorm)
+	if debugDump {
+		fmt.Fprintf(os.Stderr, "%saish: stopped after %d steps%s\n", cDim, r.cfg.MaxSteps, cNorm)
+	}
 	if lastContent != "" {
 		r.remember(request, lastContent)
 	}

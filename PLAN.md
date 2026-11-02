@@ -63,6 +63,7 @@ Precedence: **flag > env > `~/.config/aish/config.toml` (optional) > default**.
 | Command timeout | `AISH_CMD_TIMEOUT` | `2h` | per-command |
 | LLM call timeout | `AISH_LLM_TIMEOUT` | `2m` | per model request |
 | Confirm policy | `AISH_CONFIRM` | `safe-auto` | `safe-auto` / `always` / `never` |
+| Narrate results | `AISH_NARRATE` | `0` | print the model explanation after commands |
 | Server port | `AISH_LLM_PORT` | `8081` | also `AISH_LLM_HOST`, `AISH_LLM_CTX` |
 | Server lifecycle | `AISH_KEEP_ALIVE` | `0` | `1` = leave llama-server running on exit |
 | System prompt | `AISH_PROMPT_FILE` | `~/.config/aish/prompt.md` | missing → embedded default |

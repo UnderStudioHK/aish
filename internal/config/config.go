@@ -19,8 +19,9 @@ type Config struct {
 	CmdTimeout time.Duration
 	LLMTimeout time.Duration
 
-	// Safety
+	// Safety + presentation
 	Confirm string // "safe-auto" | "always" | "never"
+	Narrate bool   // print the model's explanation after tool runs
 
 	// llama-server
 	LLMHost      string
@@ -61,6 +62,7 @@ func Load() (*Config, error) {
 		CmdTimeout:    envDur("AISH_CMD_TIMEOUT", 2*time.Hour),
 		LLMTimeout:    envDur("AISH_LLM_TIMEOUT", 2*time.Minute),
 		Confirm:       envStr("AISH_CONFIRM", "safe-auto"),
+		Narrate:       envBool("AISH_NARRATE", false),
 		LLMHost:       envStr("AISH_LLM_HOST", "127.0.0.1"),
 		LLMPort:       envInt("AISH_LLM_PORT", 8081),
 		LLMCtx:        envInt("AISH_LLM_CTX", 32768),
