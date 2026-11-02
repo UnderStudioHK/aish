@@ -156,17 +156,41 @@ func (c *Client) Turn(ctx context.Context, history []Message, tools bool) (Messa
 	return cr.Choices[0].Message, nil
 }
 
-// CommandOf extracts the command from a run_command tool call.
+// CommandOf extracts the command from a run_command tool call, tolerating
+// the mildly malformed arguments small/quantized models emit.
 func CommandOf(tc ToolCall) (string, bool) {
+	raw := []byte(tc.Func.Arguments)
 	var a CommandArg
-	if err := json.Unmarshal(tc.Func.Arguments, &a); err != nil || a.Command == "" {
-		// LFM sometimes emits pythonic args already decoded to a string.
-		if s := strings.Trim(string(tc.Func.Arguments), "\""); !json.Valid([]byte(s)) && s != "" {
-			return s, true
-		}
-		return "", false
+	// 1) well-formed arguments object
+	if err := json.Unmarshal(raw, &a); err == nil && a.Command != "" {
+		return a.Command, true
 	}
-	return a.Command, true
+	// 2) arguments double-encoded (object as a JSON string)
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil && s != "" {
+		if err := json.Unmarshal([]byte(s), &a); err == nil && a.Command != "" {
+			return a.Command, true
+		}
+	}
+	// 3) escape artifacts: strip backslashes, then retry
+	cleaned := strings.Map(func(r rune) rune {
+		if r == '\\' {
+			return -1
+		}
+		return r
+	}, string(raw))
+	cleaned = strings.Trim(cleaned, `"`)
+	if err := json.Unmarshal([]byte(cleaned), &a); err == nil && a.Command != "" {
+		return a.Command, true
+	}
+	// 4) bare pythonic tail: `command="ls -la"` or a plain string
+	if t := strings.TrimSpace(string(raw)); t != "" && !strings.ContainsAny(t, "{}") {
+		if v, ok := strings.CutPrefix(t, `command=`); ok {
+			return strings.Trim(v, `"'`), true
+		}
+		return strings.Trim(t, `"'`), true
+	}
+	return "", false
 }
 
 // Healthy reports whether the server answers.
