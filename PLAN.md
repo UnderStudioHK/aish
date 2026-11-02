@@ -101,13 +101,19 @@ AMD Ryzen AI 9 HX 370 (Radeon 890M), user `lvturner`, zsh is the fallback execut
   (single stream measured ~1.6 MB/s ≈ 2 h; parallel ≈ 15–20 min), SHA-256
   verification, boot llama-server, verify OpenAI tool-call parsing with
   `--jinja`, record real tok/s on the 890M.
-- **M1 — native skeleton**: reedline REPL, router (PATH/builtin), `sh -c`
-  dispatch with streams attached, `cd`/`export` builtins, exit-code display,
+  - [x] llama.cpp Vulkan build installed (`~/tools/llama-b12034`, 890M detected, 20 GB VRAM)
+  - [x] tool-call path verified end-to-end (`finish_reason: tool_calls`, structured args)
+  - [x] intent loop validated on LFM2.5-2.6B + 230M proxies (correct kernel/disk answers from real tool output, ~5 s/turn)
+  - [ ] 24B QAD-Q4_0 GGUF on disk + SHA-256 verified + tok/s measured (downloading, ~2 h ETA)
+- **M1 — native skeleton** (done): reedline→chzyer/readline REPL, router (PATH/builtin),
+  `sh -c` dispatch with streams attached, `cd`/`export` builtins, exit-code display,
   persistent history, config package.
-- **M2 — intent path**: llm client + `run_command` tool, servermgmt
+- **M2 — intent path** (done): llm client + `run_command` tool, servermgmt
   (auto-start/health-check/auto-stop), safety classifier + confirm UI,
-  single-step execute + error feedback loop.
-- **M3 — agentic loop & ergonomics**: multi-step loop (AISH_MAX_STEPS),
-  follow-up context, `??` mode, `!` prefix, PATH completion.
-- **M4 — polish**: README, `aish doctor`, configurable never-auto pattern
-  list, optional systemd user unit for llama-server.
+  execute + error feedback loop.
+- **M3 — agentic loop & ergonomics** (done): multi-step loop (AISH_MAX_STEPS),
+  session transcript context (user/assistant pairs), `??` mode, `!` prefix,
+  PATH completion, special-token sanitizing, robust tool-arg recovery.
+- **M4 — polish** (partial): CLI flags (`--max-steps`, `--model`, `--port`,
+  `--ctx`, `--confirm`, `--version`), `aish doctor` done; remaining:
+  configurable never-auto pattern list, optional systemd user unit, README final pass.
