@@ -224,11 +224,11 @@ func fastNative(line string) bool {
 	if execx.IsBuiltin(w0) {
 		return true
 	}
-	if len(fields) == 1 {
-		return true // single token: either runs or errors immediately
-	}
 	if _, err := exec.LookPath(w0); err != nil {
 		return false // unknown first word → model may resolve intent
+	}
+	if len(fields) == 1 {
+		return true // single token that IS a real command
 	}
 	// Known binary with a tail: if every tail token looks like a shell
 	// argument (flags, paths, numbers, globs) it's native; a pile of

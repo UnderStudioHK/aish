@@ -12,6 +12,8 @@ func TestFastNative(t *testing.T) {
 		"echo hi > out":          true, // redirect
 		"grep -n main . | wc -l": true, // pipe
 		"find . -name '*.go'":    true,
+		"list":                   false, // bare non-binary word → model
+		"free":                   true,  // bare real binary
 		"grep all my huge files": false, // free-form tail
 		"python all large ones":  false,
 		"xyzzy --flag":           false, // unknown binary
