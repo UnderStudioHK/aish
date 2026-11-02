@@ -47,6 +47,7 @@ type Repl struct {
 
 	srvOnce sync.Once
 	srvStop func()
+	srvErr  error
 
 	// agent state (r.mu)
 	talk     []llm.Message // full conversation incl. tool exchanges
@@ -144,10 +145,7 @@ func (r *Repl) Run() (int, error) {
 
 	// Warm the model server in the background so first intent line is fast.
 	if r.cfg.Enabled() {
-		go func() {
-			stop, _ := r.srv.EnsureUp(context.Background(), r.llm)
-			r.srvOnce.Do(func() { r.srvStop = stop })
-		}()
+		go func() { _ = r.ensureLLM() }()
 	}
 
 	rl, err := readline.NewEx(&readline.Config{
@@ -351,13 +349,17 @@ func (r *Repl) askOnly(q string) {
 	fmt.Printf("%s%s%s\n", cYell, llm.Sanitize(msg.Content), cNorm)
 }
 
+// ensureLLM starts/checks the model server exactly once per process.
+func (r *Repl) ensureLLM() error {
+	r.srvOnce.Do(func() {
+		r.srvStop, r.srvErr = r.srv.EnsureUp(context.Background(), r.llm)
+	})
+	return r.srvErr
+}
+
 // readyLLM makes sure the server is up (blocking, first use only).
 func (r *Repl) readyLLM() bool {
-	var err error
-	r.srvOnce.Do(func() {
-		r.srvStop, err = r.srv.EnsureUp(context.Background(), r.llm)
-	})
-	if err != nil {
+	if err := r.ensureLLM(); err != nil {
 		fmt.Printf("%saish: %v%s\n", cRed, err, cNorm)
 		return false
 	}

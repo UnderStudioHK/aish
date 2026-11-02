@@ -2,7 +2,7 @@
 
 An AI shell for daily interactive use — a REPL that replaces the zsh/bash
 *user experience* (not for running scripts). Natural-language lines are
-parsed for intent by **LiquidAI LFM2.5-24B-A2B** running locally via
+parsed for intent by **LiquidAI LFM2.5-2.6B** running locally via
 llama.cpp, converted to one or more concrete shell commands, previewed,
 and executed — with exit codes fed back for self-correction.
 
@@ -54,7 +54,10 @@ kept intact for your next request. `AISH_FOLLOWUP=lazy` instead shows
 - Linux, Go 1.22+ to build
 - [llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-server` (built with
   Vulkan works on the AMD Radeon 890M iGPU this machine ships with)
-- The model GGUF: `LiquidAI/LFM2.5-24B-A2B-GGUF` (any quant; QAD-Q4_0 default)
+- The model GGUF: **`LiquidAI/LFM2.5-2.6B-GGUF` Q4_0** (1.6 GB) by default.
+  It scored 94% on the shell-task suite at ~2-4 s/turn on this iGPU. Larger
+  models are supported via `AISH_MODEL`; 8B-A1B reasons for ~600 tokens
+  before acting and measured 3-5x slower here, so it is not the default.
 
 ## Build
 
@@ -92,7 +95,7 @@ prompt-dependent.
 | Server host/port | `AISH_LLM_HOST` / `AISH_LLM_PORT` | `127.0.0.1` / `8081` | llama-server endpoint |
 | Model server ctx | `AISH_LLM_CTX` | `32768` | context length passed to llama-server |
 | Server binary | `AISH_LLM_BIN` | `~/tools/llama-b12034/llama-server` | llama-server executable |
-| Model file | `AISH_MODEL` | `~/models/LFM2.5-24B-A2B-QAD-Q4_0.gguf` | GGUF to serve |
+| Model file | `AISH_MODEL` | `~/models/LFM2.5-2.6B-Q4_0.gguf` | GGUF to serve |
 | Keep alive | `AISH_KEEP_ALIVE` | `0` | don't stop llama-server on exit |
 | Prompt file | `AISH_PROMPT_FILE` | `~/.config/aish/prompt.md` | persona/system prompt |
 | State dir | `AISH_STATE_DIR` | `~/.local/state/aish` | history + logs |

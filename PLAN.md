@@ -2,14 +2,16 @@
 
 An AI-driven shell REPL in Go that replaces zsh/bash *from the user-facing side*
 (not for script running). Intent parsing for natural-language lines is done by
-LiquidAI **LFM2.5-24B-A2B** served locally via llama.cpp on the Radeon 890M iGPU.
+LiquidAI **LFM2.5-2.6B** (bake-off winner) served locally via llama.cpp on the
+Radeon 890M iGPU.
 
 ## Machine context
 
 - Fedora 44, AMD Ryzen AI 9 HX 370 (24 threads), Radeon 890M iGPU, 23 GB unified RAM
 - LLM backend: llama.cpp b12034 (prebuilt Vulkan release) at `~/tools/llama-b12034/`
-- Model: `LiquidAI/LFM2.5-24B-A2B-GGUF — QAD-Q4_0` (13.6 GB) at `~/models/`
-  (fits fully on the iGPU; LiquidAI-recommended quality-aware 4-bit quant)
+- Model: `LiquidAI/LFM2.5-2.6B-GGUF — Q4_0` (1.6 GB) at `~/models/` (94%,
+  ~2-4 s/turn). 8B-A1B kept on disk (too slow: ~600 thinking tokens before
+  acting); 24B download cancelled, partial kept resumable.
 - Serving API: OpenAI-compatible at `127.0.0.1:8081`
 
 ## Architecture
