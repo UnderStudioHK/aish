@@ -131,6 +131,11 @@ AMD Ryzen AI 9 HX 370 (Radeon 890M), user `lvturner`, zsh is the fallback execut
   git branch/dirty, `✗N`, `⏎` pending marker, root glyph), configurable via
   `AISH_PROMPT_STYLE`/`AISH_PROMPT_TMPL`; full behavior reference in
   `docs/behavior.md`.
+- **Confirmation input** (done): confirmations read through readline (own
+  history-free instance) instead of a raw `bufio.Reader`, fixing stray
+  newlines/double echo and making sudo-style interactive commands reliable;
+  verb-like binaries (`install`, `make`, `test`, `yes`) route to the model
+  when followed by natural-language arguments.
 - **F1 — instant prompt & eager follow-up** (done): sync turn + background
   follow-up with queued proposals, prompt-safe inline hints (readline
   Refresh), Enter-to-accept, cancel/dismiss on new input, epoch-guarded

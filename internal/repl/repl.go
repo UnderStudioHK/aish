@@ -77,6 +77,10 @@ type Repl struct {
 	uiMu         sync.Mutex // guards prompt-active printing
 	promptActive bool
 	rl           *readline.Instance
+
+	confirmOnce sync.Once
+	confirmRL   *readline.Instance
+	confirmErr  error
 }
 
 func New(cfg *config.Config, dir *execx.Director, h *history.Store,
@@ -187,7 +191,12 @@ func (r *Repl) Run() (int, error) {
 		return 1, err
 	}
 	r.rl = rl
-	defer rl.Close()
+	defer func() {
+		if r.confirmRL != nil {
+			_ = r.confirmRL.Close()
+		}
+		_ = rl.Close()
+	}()
 
 	for {
 		rl.SetPrompt(r.promptString())
@@ -311,14 +320,39 @@ func fastNative(line string) bool {
 		}
 		freeWords++
 	}
+	// Some binaries are also common English verbs: "install figlet" or
+	// "make the file readable" is intent, while "install -m 644 x y" or
+	// "make all" is shell. Route to the model once enough free words pile
+	// up for these.
+	if threshold, ok := ambiguousVerbs[w0]; ok && freeWords >= threshold {
+		return false
+	}
 	return freeWords < 3
 }
 
+// ambiguousVerbs maps verb-like binaries to how many free-form words turn
+// the line into natural language.
+var ambiguousVerbs = map[string]int{
+	"install": 1,
+	"test":    1,
+	"yes":     1,
+	"make":    2,
+}
+
 func looksShellToken(w string) bool {
-	if len(w) == 1 {
+	if len(w) == 1 || isAllDigits(w) {
 		return true
 	}
 	return strings.HasPrefix(w, "-") || strings.ContainsAny(w, "~/.$*{}=\"(")
+}
+
+func isAllDigits(s string) bool {
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return s != ""
 }
 
 // contextLine tells the model exactly where and on what it is; appended per
@@ -412,14 +446,52 @@ func colorFor(lv safety.Level) string {
 	return ""
 }
 
+// ask reads a confirmation through readline itself. This keeps a single
+// owner of the terminal (no stray newlines or raw/cooked mismatches between
+// separate stdin readers) and gives proper line editing/echo.
+func (r *Repl) ask(cmd string, lv safety.Level) (string, bool) {
+	r.confirmOnce.Do(func() {
+		r.confirmRL, r.confirmErr = readline.NewEx(&readline.Config{
+			Prompt:          "",
+			InterruptPrompt: "^C",
+			HistoryLimit:    0,
+		})
+	})
+	if r.confirmErr != nil || r.confirmRL == nil {
+		return "", false
+	}
+	hint := "[y/N]"
+	if lv == safety.Never {
+		hint = "type 'yes'"
+	}
+	r.confirmRL.SetPrompt(fmt.Sprintf("  run (%s, n=cancel, e=edit)? ", hint))
+	ans, err := r.confirmRL.Readline()
+	if err != nil {
+		// Ctrl-C / Esc / EOF all mean "do not run".
+		return "", false
+	}
+	switch strings.ToLower(strings.TrimSpace(ans)) {
+	case "y":
+		if lv == safety.Never {
+			return "", false
+		}
+		return cmd, true
+	case "yes":
+		return cmd, true
+	case "e", "edit":
+		return safety.Edited(cmd)
+	}
+	return "", false
+}
+
 // mayRun gates a proposed command through policy + interactive confirm.
 func (r *Repl) mayRun(cmd string, lv safety.Level) bool {
 	switch {
 	case lv != safety.Safe:
-		_, ok := safety.Ask(cmd, lv)
+		_, ok := r.ask(cmd, lv)
 		return ok
 	case r.policy.Mode == "always":
-		_, ok := safety.Ask(cmd, lv)
+		_, ok := r.ask(cmd, lv)
 		return ok
 	}
 	return true // safe + safe-auto/never

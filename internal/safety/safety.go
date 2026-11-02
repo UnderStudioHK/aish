@@ -2,9 +2,7 @@
 package safety
 
 import (
-	"bufio"
 	"fmt"
-	"golang.org/x/term"
 	"os"
 	"os/exec"
 	"regexp"
@@ -84,37 +82,6 @@ func NewPolicy(mode string) Policy {
 		mode = "safe-auto"
 	}
 	return Policy{Mode: mode}
-}
-
-// Ask prompts on stderr and reads one line. Returns the approved
-// command (possibly edited) and whether to run.
-func Ask(cmd string, lv Level) (string, bool) {
-	desc, _ := term.GetState(int(os.Stdin.Fd()))
-	defer term.Restore(int(os.Stdin.Fd()), desc)
-
-	diff := "[y/N]"
-	if lv == Never {
-		diff = "type 'yes'"
-	}
-	fmt.Fprintf(os.Stderr, "  run (%s, n=cancel, e=edit)? ", diff)
-	sc := bufio.NewReader(os.Stdin)
-	line, err := sc.ReadString('\n')
-	if err != nil {
-		return "", false
-	}
-	ans := strings.TrimSpace(line)
-	switch {
-	case lv != Never && strings.EqualFold(ans, "y"):
-		return cmd, true
-	case strings.EqualFold(ans, "yes"):
-		return cmd, true
-	case strings.EqualFold(ans, "edit") || strings.EqualFold(ans, "e"):
-		return Edited(cmd)
-	case strings.EqualFold(ans, "no") || strings.EqualFold(ans, "n"):
-		return "", false
-	default:
-		return "", false
-	}
 }
 
 // Edited opens $EDITOR on the command; returns new command, ok.

@@ -20,6 +20,17 @@ The fast-path heuristic treats a line as native when the first token is a real
 paths, globs, numbers). Three or more free-form English words after a real
 binary, or an unknown first word, go to the model.
 
+Some binaries are also English verbs. For `install`, `test`, `yes` one
+free-form argument, and `make` two, switch the line to intent:
+
+| Line | Path |
+|---|---|
+| `install figlet` | intent → model resolves it |
+| `install -m 644 a b` | native (explicit flags) |
+| `make the file readable` | intent |
+| `make all` | native |
+| `npm run build`, `time ls` | native (not verb-listed) |
+
 ### Repeating a request
 
 An **exact repeat** of a request that previously executed commands re-runs
@@ -113,10 +124,17 @@ Every proposal is displayed. The classifier rates commands:
 - **destructive** — `rm -rf`, `dd`, `mkfs`, force-push, `git reset --hard`,
   `truncate -s 0`, `shutdown`… → red, requires typing `yes`.
 
-`e` opens `$EDITOR` on the proposed command. `AISH_CONFIRM=always` prompts for
+`e` opens `$EDITOR` on the proposed command; `Ctrl-C`, `Esc`, or a bare
+Enter cancel without running anything. `AISH_CONFIRM=always` prompts for
 everything; `never` auto-runs safe/confirm commands but still demands `yes`
 for destructive ones. The classifier lives in Go, so a custom system prompt
 cannot weaken it.
+
+Confirmation input goes through the same readline instance as commands (a
+dedicated history-free reader), never a second `bufio.Reader` on stdin. That
+single terminal owner is why typed answers echo once, arrow editing works,
+and stray newlines cannot silently cancel a command or leak into the next
+prompt as a request.
 
 ## 6. Scope and grounding
 

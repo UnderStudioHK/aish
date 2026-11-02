@@ -15,6 +15,12 @@ func TestFastNative(t *testing.T) {
 		"echo hi > out":          true, // redirect
 		"grep -n main . | wc -l": true, // pipe
 		"find . -name '*.go'":    true,
+		"install figlet":         false, // verb-like binary + object → model
+		"install -m 644 a b":     true,  // explicit flags → shell
+		"make all":               true,
+		"make the file readable": false,
+		"npm run build":          true,
+		"time ls":                true,
 		"list":                   false, // bare non-binary word → model
 		"free":                   true,  // bare real binary
 		"grep all my huge files": false, // free-form tail
