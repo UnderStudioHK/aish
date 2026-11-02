@@ -74,6 +74,11 @@ type Policy struct {
 
 func (p Policy) Classify(cmd string) Level { return p.Class.Classify(cmd) }
 
+// MayAutoRun: command executes without any prompt.
+func (p Policy) MayAutoRun(cmd string) bool {
+	return p.Mode != "always" && p.Class.Classify(cmd) == Safe
+}
+
 func NewPolicy(mode string) Policy {
 	if mode == "" {
 		mode = "safe-auto"
