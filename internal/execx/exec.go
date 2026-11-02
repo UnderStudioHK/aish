@@ -3,6 +3,7 @@
 package execx
 
 import (
+	"fmt"
 	"context"
 	"io"
 	"os"
@@ -97,6 +98,49 @@ func (d *Director) Builtin(line string, h Hooks) (bool, bool) {
 		return true, true
 	}
 	return false, false
+}
+
+// ApplyIfBuiltin executes cd/export-style commands in-process so their
+// effect persists (a subshell would lose it). Returns model feedback and
+// whether the command was handled.
+func (d *Director) ApplyIfBuiltin(line string) (string, bool) {
+	words := strings.Fields(line)
+	if len(words) == 0 {
+		return "", false
+	}
+	// Only a bare builtin is applied in-process; compounds ("cd x && y")
+	// belong to the shell and cannot persist.
+	if strings.ContainsAny(line, "&|;<>`$(){}") || strings.ContainsRune(line, '"') {
+		return "", false
+	}
+	switch words[0] {
+	case "cd":
+		dir := ""
+		if len(words) > 1 {
+			dir = os.ExpandEnv(words[1])
+		}
+		if dir == "" {
+			dir = os.Getenv("HOME")
+		}
+		if err := os.Chdir(dir); err != nil {
+			return "error: " + err.Error(), true
+		}
+		wd, _ := os.Getwd()
+		return "changed directory; now in " + wd, true
+	case "export":
+		applied := 0
+		for _, kv := range words[1:] {
+			if key, val, ok := strings.Cut(kv, "="); ok {
+				os.Setenv(key, val)
+				applied++
+			}
+		}
+		if applied == 0 {
+			return "error: export needs KEY=VALUE", true
+		}
+		return fmt.Sprintf("exported %d variable(s)", applied), true
+	}
+	return "", false
 }
 
 // RunNative runs a command through /bin/sh with the terminal attached

@@ -115,10 +115,14 @@ type chatResponse struct {
 }
 
 // Turn calls the server once. tools=false omits the tool schema (answer
-// in prose only). Returns the assistant message.
-func (c *Client) Turn(ctx context.Context, history []Message, tools bool) (Message, error) {
-	msgs := make([]Message, 0, len(history)+1)
+// in prose only). sysExtra, when non-empty, is appended as a second system
+// message after the static prompt (keeps the cached prompt prefix intact).
+func (c *Client) Turn(ctx context.Context, history []Message, tools bool, sysExtra string) (Message, error) {
+	msgs := make([]Message, 0, len(history)+2)
 	msgs = append(msgs, Message{Role: "system", Content: c.Prompt})
+	if sysExtra != "" {
+		msgs = append(msgs, Message{Role: "system", Content: sysExtra})
+	}
 	msgs = append(msgs, history...)
 
 	req := chatRequest{

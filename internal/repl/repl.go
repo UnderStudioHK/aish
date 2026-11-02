@@ -250,6 +250,17 @@ func looksShellToken(w string) bool {
 	return strings.HasPrefix(w, "-") || strings.ContainsAny(w, "~/.$*{}=\"(")
 }
 
+// contextLine tells the model exactly where it is; appended per request so
+// the prompt prefix stays cacheable.
+func (r *Repl) contextLine() string {
+	wd, _ := os.Getwd()
+	home, _ := os.UserHomeDir()
+	return fmt.Sprintf(
+		"Current working directory: %s\nHome directory: %s\nShell: /bin/sh. "+
+			"`cd` and `export` are applied in-process and persist across commands.",
+		wd, home)
+}
+
 // askOnly sends a question with no tools; the answer is printed in yellow.
 func (r *Repl) askOnly(q string) {
 	if !r.readyLLM() {
@@ -257,7 +268,7 @@ func (r *Repl) askOnly(q string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), r.cfg.LLMTimeout)
 	defer cancel()
-	msg, err := r.llm.Turn(ctx, []llm.Message{{Role: "user", Content: q}}, false)
+	msg, err := r.llm.Turn(ctx, []llm.Message{{Role: "user", Content: q}}, false, r.contextLine())
 	if err != nil {
 		fmt.Printf("%saish: %v%s\n", cRed, err, cNorm)
 		return
@@ -309,7 +320,7 @@ func (r *Repl) intentLoop(request string) int {
 	for step := 0; step < r.cfg.MaxSteps; step++ {
 		dump(fmt.Sprintf("req_%d", step), msgs)
 		tctx, cancel := context.WithTimeout(context.Background(), r.cfg.LLMTimeout)
-		asMsg, err := r.llm.Turn(tctx, msgs, true)
+		asMsg, err := r.llm.Turn(tctx, msgs, true, r.contextLine())
 		cancel()
 		if err != nil {
 			fmt.Printf("%saish: %v%s\n", cRed, err, cNorm)
@@ -349,10 +360,20 @@ func (r *Repl) intentLoop(request string) int {
 				declined = true
 				break
 			}
+			// cd/export must persist in the REPL process, not a subshell.
+			if fb, handled := r.dir.ApplyIfBuiltin(cmd); handled {
+				msgs = append(msgs, llm.Message{Role: "tool", ToolCallID: tc.ID, Content: fb})
+				executedAny = true
+				continue
+			}
 			cctx, ccancel := context.WithTimeout(context.Background(), r.cfg.CmdTimeout)
 			out, code, _ := r.dir.RunTee(cctx, cmd)
 			ccancel()
 			executedAny = true
+			if strings.HasPrefix(cmd, "cd ") || cmd == "cd" {
+				out += "\nnote: cd inside a compound command runs in a subshell; " +
+					"the persistent working directory is unchanged. Emit a plain `cd <dir>` to change it."
+			}
 			msgs = append(msgs, llm.Message{Role: "tool", ToolCallID: tc.ID,
 				Content: fmt.Sprintf("exit_code=%d\n%s", code, out)})
 			r.lastCode = code

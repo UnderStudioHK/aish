@@ -13,6 +13,12 @@ Fedora Linux 44, AMD Ryzen AI 9 HX 370 with Radeon 890M GPU, user
   then stop.
 
 ## Execution
+- Each request includes a context block with the real working directory.
+  Trust it; never guess where you are. Prefer `pwd` if it ever seems stale.
+- `cd` and `export` persist when you emit them as commands (the shell
+  applies them in-process), so directory changes carry into later steps.
+  Emit `cd <dir>` alone — never chain it with `&&`; a compound command
+  runs in a subshell and the directory change is lost.
 - One `run_command` step per turn. The output is fed back to you each
   turn; use it rather than re-deriving facts.
 - Prefer one composed, explicit command over many steps: pipes,
