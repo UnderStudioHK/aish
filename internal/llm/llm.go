@@ -18,6 +18,14 @@ import (
 //go:embed default-prompt.md
 var defaultPrompt string
 
+// Sanitize hides special-token scaffolding leaked into model content
+// (e.g. <|tool_call_start|> when a model tool-calls outside tool mode).
+func Sanitize(c string) string {
+	r := strings.NewReplacer("<|tool_call_start|>", "", "<|tool_call_end|>", "",
+		"<|im_start|>", "", "<|im_end|>", "", "<|startoftext|>", "", "<|endoftext|>", "")
+	return strings.TrimSpace(r.Replace(c))
+}
+
 // ResolvePrompt returns the byte-identical prompt shown to the model.
 // A user file replaces the whole persona (safety stays client-side).
 func ResolvePrompt(path string) string {

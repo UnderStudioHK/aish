@@ -2,6 +2,7 @@
 package repl
 
 import (
+	"encoding/json"
 	"context"
 	"errors"
 	"fmt"
@@ -48,6 +49,8 @@ type Repl struct {
 
 	srvOnce sync.Once
 	srvStop func()
+
+	talk []llm.Message // session transcript (user/assistant pairs)
 }
 
 func New(cfg *config.Config, dir *execx.Director, h *history.Store,
@@ -259,7 +262,7 @@ func (r *Repl) askOnly(q string) {
 		fmt.Printf("%saish: %v%s\n", cRed, err, cNorm)
 		return
 	}
-	fmt.Printf("%s%s%s\n", cYell, strings.TrimSpace(msg.Content), cNorm)
+	fmt.Printf("%s%s%s\n", cYell, llm.Sanitize(msg.Content), cNorm)
 }
 
 // readyLLM makes sure the server is up (blocking, first use only).
@@ -282,20 +285,26 @@ func (r *Repl) intentLoop(request string) int {
 	}
 
 	var msgs []llm.Message
-	for _, recent := range r.hist.Last(2 * r.cfg.HistoryTurns) {
-		if recent == request || recent == "!!" || recent == "??" {
-			continue
-		}
-		msgs = append(msgs, llm.Message{Role: "user", Content: recent})
-	}
+	// Prior turns as real user/assistant pairs (bounded by AISH_HISTORY_TURNS).
+	msgs = append(msgs, r.talk...)
 	msgs = append(msgs, llm.Message{Role: "user", Content: request})
 
 	start := time.Now()
+	var lastContent string
+	debugDump := os.Getenv("AISH_DEBUG") != ""
+	dump := func(stage string, msgs []llm.Message) {
+		if !debugDump {
+			return
+		}
+		b, _ := json.MarshalIndent(msgs, "", " ")
+		_ = os.WriteFile("/tmp/opencode/aish_dbg_"+stage+".json", b, 0o644)
+	}
 	defer func() {
 		fmt.Fprintf(os.Stderr, "%s[%s model time]%s\n", cDim, time.Since(start).Round(100*time.Millisecond), cNorm)
 	}()
 
 	for step := 0; step < r.cfg.MaxSteps; step++ {
+		dump(fmt.Sprintf("req_%d", step), msgs)
 		tctx, cancel := context.WithTimeout(context.Background(), r.cfg.LLMTimeout)
 		asMsg, err := r.llm.Turn(tctx, msgs, true)
 		cancel()
@@ -304,12 +313,15 @@ func (r *Repl) intentLoop(request string) int {
 			return -1
 		}
 		if strings.TrimSpace(asMsg.Content) != "" {
-			fmt.Printf("%s%s%s\n", cYell, strings.TrimSpace(asMsg.Content), cNorm)
+			lastContent = llm.Sanitize(asMsg.Content)
+			fmt.Printf("%s%s%s\n", cYell, lastContent, cNorm)
 			if len(asMsg.ToolCalls) == 0 {
+				r.remember(request, lastContent)
 				return r.lastCode
 			}
 		}
 		if len(asMsg.ToolCalls) == 0 {
+			r.remember(request, lastContent)
 			return r.lastCode
 		}
 		msgs = append(msgs, asMsg)
@@ -335,10 +347,26 @@ func (r *Repl) intentLoop(request string) int {
 				Content: fmt.Sprintf("exit_code=%d\n%s", code, out)})
 			r.lastCode = code
 			r.lastShown = code
+			dump(fmt.Sprintf("post_tool_%d", step), msgs)
 		}
 	}
 	fmt.Fprintf(os.Stderr, "%saish: stopped after %d steps%s\n", cDim, r.cfg.MaxSteps, cNorm)
+	if lastContent != "" {
+		r.remember(request, lastContent)
+	}
 	return r.lastCode
+}
+
+// remember stores one completed user exchange for next-turn context.
+func (r *Repl) remember(request string, final string) {
+	r.talk = append(r.talk,
+		llm.Message{Role: "user", Content: request},
+		llm.Message{Role: "assistant", Content: final})
+	// keep at most HistoryTurns pairs
+	max := 2 * r.cfg.HistoryTurns
+	if len(r.talk) > max {
+		r.talk = r.talk[len(r.talk)-max:]
+	}
 }
 
 func colorFor(lv safety.Level) string {
