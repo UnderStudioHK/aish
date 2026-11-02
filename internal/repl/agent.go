@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"aish/internal/llm"
+	"aish/internal/pkgfind"
 )
 
 // ---- state helpers (all fields guarded by r.mu) ----
@@ -63,10 +64,15 @@ func (r *Repl) talkCopy() []llm.Message {
 }
 
 // llmTurn is the single-flight model call (one request at a time).
-func (r *Repl) llmTurn(ctx context.Context, msgs []llm.Message, tools bool) (llm.Message, error) {
+// extra is optional per-request context appended after the live cwd block.
+func (r *Repl) llmTurn(ctx context.Context, msgs []llm.Message, tools bool, extra string) (llm.Message, error) {
+	sys := r.contextLine()
+	if extra != "" {
+		sys += "\n\n" + extra
+	}
 	r.llmMu.Lock()
 	defer r.llmMu.Unlock()
-	return r.llm.Turn(ctx, msgs, tools, r.contextLine())
+	return r.llm.Turn(ctx, msgs, tools, sys)
 }
 
 // ---- prompt-safe hint rendering ----
@@ -104,7 +110,7 @@ func (r *Repl) handleIntent(request string) int {
 
 	debugDump("intent", msgs)
 	tctx, cancel := context.WithTimeout(context.Background(), r.cfg.LLMTimeout)
-	asMsg, err := r.llmTurn(tctx, msgs, true)
+	asMsg, err := r.llmTurn(tctx, msgs, true, r.typoHint(request))
 	cancel()
 	if err != nil {
 		fmt.Printf("%saish: %v%s\n", cRed, err, cNorm)
@@ -137,6 +143,18 @@ func (r *Repl) handleIntent(request string) int {
 // the conversation. Returns false if the user declined.
 func (r *Repl) executeCalls(calls []llm.ToolCall) bool {
 	for _, tc := range calls {
+		// find_package is read-only: resolve locally, no gate.
+		if tc.Func.Name == "find_package" {
+			r.findPackage(tc)
+			continue
+		}
+		if tc.Func.Name != "" && tc.Func.Name != "run_command" {
+			r.mu.Lock()
+			r.appendTalkLocked(llm.Message{Role: "tool", ToolCallID: tc.ID,
+				Content: "error: unknown tool " + tc.Func.Name})
+			r.mu.Unlock()
+			continue
+		}
 		cmd, ok := llm.CommandOf(tc)
 		if !ok {
 			r.mu.Lock()
@@ -166,6 +184,26 @@ func (r *Repl) executeCalls(calls []llm.ToolCall) bool {
 		r.mu.Unlock()
 	}
 	return true
+}
+
+// findPackage resolves a package name against local ecosystems and feeds
+// the answer back to the model.
+func (r *Repl) findPackage(tc llm.ToolCall) {
+	name, ok := llm.PackageOf(tc)
+	if !ok {
+		r.mu.Lock()
+		r.appendTalkLocked(llm.Message{Role: "tool", ToolCallID: tc.ID,
+			Content: "error: missing package name"})
+		r.mu.Unlock()
+		return
+	}
+	fmt.Printf("%s? find_package %s%s\n", cDim, name, cNorm)
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	out := pkgfind.Resolve(ctx, name)
+	cancel()
+	r.mu.Lock()
+	r.appendTalkLocked(llm.Message{Role: "tool", ToolCallID: tc.ID, Content: out})
+	r.mu.Unlock()
 }
 
 // runCommand executes one command (builtin-aware), returning model feedback.
@@ -224,7 +262,7 @@ func (r *Repl) startFollowUp() {
 	go func() {
 		defer cancel()
 		start := time.Now()
-		msg, err := r.llmTurn(ctx, msgs, true)
+		msg, err := r.llmTurn(ctx, msgs, true, "")
 		r.debugTime("follow-up", start)
 		if err == nil {
 			r.debugLog("follow-up: calls=%d content=%d", len(msg.ToolCalls), len(msg.Content))
@@ -287,7 +325,7 @@ func (r *Repl) continueSync() {
 	msgs := r.talkCopy()
 	start := time.Now()
 	tctx, cancel := context.WithTimeout(context.Background(), r.cfg.LLMTimeout)
-	msg, err := r.llmTurn(tctx, msgs, true)
+	msg, err := r.llmTurn(tctx, msgs, true, "")
 	cancel()
 	r.debugTime("continue", start)
 	if err != nil {
@@ -339,9 +377,13 @@ func describeCalls(calls []llm.ToolCall) string {
 	if len(calls) == 0 {
 		return ""
 	}
-	cmd, ok := llm.CommandOf(calls[0])
-	if !ok {
-		cmd = "?"
+	cmd := "?"
+	if calls[0].Func.Name == "find_package" {
+		if name, ok := llm.PackageOf(calls[0]); ok {
+			cmd = "find_package " + name
+		}
+	} else if c, ok := llm.CommandOf(calls[0]); ok {
+		cmd = c
 	}
 	if len(calls) > 1 {
 		return fmt.Sprintf("%s (+%d more)", cmd, len(calls)-1)

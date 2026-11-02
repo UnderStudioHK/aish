@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -79,6 +80,24 @@ type CommandArg struct {
 const toolDescription = "Run a command through /bin/sh on this machine. " +
 	"The full output (truncated) and exit code come back to you next turn."
 
+var findPackageTool = map[string]any{
+	"type": "function",
+	"function": map[string]any{
+		"name": "find_package",
+		"description": "Look up which local package ecosystem provides a piece of " +
+			"software (checks dnf and flatpak). Call this BEFORE any install " +
+			"command so you know whether it is a system package, a flatpak, or " +
+			"something else.",
+		"parameters": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"name": map[string]any{"type": "string"},
+			},
+			"required": []string{"name"},
+		},
+	},
+}
+
 var runCommandTool = map[string]any{
 	"type": "function",
 	"function": map[string]any{
@@ -131,7 +150,7 @@ func (c *Client) Turn(ctx context.Context, history []Message, tools bool, sysExt
 		Temperature: 0.1,
 	}
 	if tools {
-		req.Tools = []map[string]any{runCommandTool}
+		req.Tools = []map[string]any{runCommandTool, findPackageTool}
 	}
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -167,6 +186,33 @@ func (c *Client) Turn(ctx context.Context, history []Message, tools bool, sysExt
 	}
 	return cr.Choices[0].Message, nil
 }
+
+// PackageOf extracts the package name from a find_package tool call,
+// tolerating JSON, escaped JSON, and pythonic `name="x"` forms.
+func PackageOf(tc ToolCall) (string, bool) {
+	var a struct {
+		Name string `json:"name"`
+	}
+	raw := strings.Map(func(r rune) rune {
+		if r == '\\' {
+			return -1
+		}
+		return r
+	}, string(tc.Func.Arguments))
+	if err := json.Unmarshal([]byte(raw), &a); err == nil && a.Name != "" {
+		return a.Name, true
+	}
+	// pythonic / malformed: name="ripgrep" or name: ripgrep
+	if m := rePackageName.FindStringSubmatch(raw); len(m) == 2 && m[1] != "" {
+		return m[1], true
+	}
+	if t := strings.Trim(raw, `"' {}`); t != "" && !strings.ContainsAny(t, "{}:") {
+		return strings.TrimPrefix(t, "name="), true
+	}
+	return "", false
+}
+
+var rePackageName = regexp.MustCompile(`name["']?\s*[:=]\s*["']?([A-Za-z0-9][A-Za-z0-9._+-]*)`)
 
 // CommandOf extracts the command from a run_command tool call, tolerating
 // the mildly malformed arguments small/quantized models emit.

@@ -56,6 +56,11 @@ type Repl struct {
 	cancel   context.CancelFunc
 	pending  []llm.ToolCall
 
+	// typo assistance cache
+	cmdOnce  sync.Once
+	cmdNames []string
+	dict     map[string]bool
+
 	// ui state
 	mu           sync.Mutex // guards the fields above
 	llmMu        sync.Mutex // single-flight model calls
@@ -66,7 +71,8 @@ type Repl struct {
 
 func New(cfg *config.Config, dir *execx.Director, h *history.Store,
 	c *llm.Client, s *servermgmt.Server) *Repl {
-	return &Repl{cfg: cfg, dir: dir, hist: h, llm: c, srv: s, policy: safety.NewPolicy(cfg.Confirm)}
+	return &Repl{cfg: cfg, dir: dir, hist: h, llm: c, srv: s,
+		policy: safety.NewPolicy(cfg.Confirm), dict: map[string]bool{}}
 }
 
 func shortCwd() string {
@@ -282,15 +288,52 @@ func looksShellToken(w string) bool {
 	return strings.HasPrefix(w, "-") || strings.ContainsAny(w, "~/.$*{}=\"(")
 }
 
-// contextLine tells the model exactly where it is; appended per request so
-// the prompt prefix stays cacheable.
+// contextLine tells the model exactly where and on what it is; appended per
+// request so the static prompt prefix stays cacheable.
 func (r *Repl) contextLine() string {
 	wd, _ := os.Getwd()
 	home, _ := os.UserHomeDir()
+	osName := "unknown"
+	if b, err := os.ReadFile("/etc/os-release"); err == nil {
+		for _, line := range strings.Split(string(b), "\n") {
+			if v, ok := strings.CutPrefix(line, "PRETTY_NAME="); ok {
+				osName = strings.Trim(v, `"`)
+			}
+		}
+	}
+	pm := "unknown"
+	switch {
+	case exists("/usr/bin/dnf") || exists("/bin/dnf"):
+		pm = "dnf (Fedora/RHEL)"
+	case exists("/usr/bin/apt"):
+		pm = "apt (Debian/Ubuntu)"
+	case exists("/usr/bin/pacman"):
+		pm = "pacman (Arch)"
+	}
+	python := "python3"
+	if exists("/usr/bin/python3.14") {
+		python = "python3.14"
+	}
+	extra := ""
+	if exists("/usr/bin/pipx") {
+		extra += " pipx available for Python CLI tools."
+	}
+	if exists("/usr/bin/uv") {
+		extra += " uv available."
+	}
 	return fmt.Sprintf(
-		"Current working directory: %s\nHome directory: %s\nShell: /bin/sh. "+
-			"`cd` and `export` are applied in-process and persist across commands.",
-		wd, home)
+		"Current working directory: %s\nHome directory: %s\nOS: %s\n"+
+			"System package manager: %s. Use it for system packages; never "+
+			"use pip for system packages (use pipx/uv only for Python CLI tools).\n"+
+			"Python: %s.%s\nShell: /bin/sh. `cd` and `export` are applied "+
+			"in-process and persist across commands. Prefer `--help`/`man` "+
+			"over guessing when unsure about a program's flags.",
+		wd, home, osName, pm, python, extra)
+}
+
+func exists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }
 
 // askOnly sends a question with no tools; the answer is printed in yellow.
@@ -300,7 +343,7 @@ func (r *Repl) askOnly(q string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), r.cfg.LLMTimeout)
 	defer cancel()
-	msg, err := r.llmTurn(ctx, []llm.Message{{Role: "user", Content: q}}, false)
+	msg, err := r.llmTurn(ctx, []llm.Message{{Role: "user", Content: q}}, false, "")
 	if err != nil {
 		fmt.Printf("%saish: %v%s\n", cRed, err, cNorm)
 		return

@@ -116,6 +116,10 @@ AMD Ryzen AI 9 HX 370 (Radeon 890M), user `lvturner`, zsh is the fallback execut
 - **M3 — agentic loop & ergonomics** (done): multi-step loop (AISH_MAX_STEPS),
   session transcript context (user/assistant pairs), `??` mode, `!` prefix,
   PATH completion, special-token sanitizing, robust tool-arg recovery.
+- **Tools & grounding** (done): `find_package(name)` local resolver
+  (dnf/flatpak) for package provenance; context block with OS, package
+  manager, Python; typo hints from PATH edit-distance + system dictionary.
+  Bake-off harness `scripts/bakeoff.py` (16 tasks).
 - **F1 — instant prompt & eager follow-up** (done): sync turn + background
   follow-up with queued proposals, prompt-safe inline hints (readline
   Refresh), Enter-to-accept, cancel/dismiss on new input, epoch-guarded

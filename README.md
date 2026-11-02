@@ -20,6 +20,19 @@ ps aux --sort=-%cpu | head -8
 - `!cmd` force native, `!!` repeat last, `??question` ask-only (no commands),
   `cd`/`export` persist across prompts, `Ctrl-C` cancels the running child.
 
+### What the model can call
+
+- `run_command` — the gate to /bin/sh (results stream live; exit codes fed back).
+- `find_package(name)` — resolves software against **local** ecosystems
+  (`dnf info`, `flatpak search`) before any install, so the model knows
+  whether something is a system package (e.g. `ripgrep` → dnf) instead of
+  guessing `pip`. Read-only, never gated.
+
+The request context also carries live OS/package-manager/Python facts, and
+a typo aid flags unknown first words with the closest real commands
+(`gti` → `git`) using an edit-distance lookup + the system dictionary
+(English words like `list` are not treated as typos).
+
 ### Multi-turn feel
 
 After a command runs, the prompt returns **immediately** — the model's

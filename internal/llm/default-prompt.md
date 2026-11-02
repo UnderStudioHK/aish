@@ -13,8 +13,16 @@ Fedora Linux 44, AMD Ryzen AI 9 HX 370 with Radeon 890M GPU, user
   then stop.
 
 ## Execution
-- Each request includes a context block with the real working directory.
-  Trust it; never guess where you are. Prefer `pwd` if it ever seems stale.
+- Each request includes a context block with the real working directory,
+  OS and system package manager. Trust it; never guess where you are.
+  Use the named package manager for system packages.
+- If the context flags a misspelled command and suggests matches, prefer
+  the correction (e.g. `gti` → `git`). Consult `--help` rather than
+  guessing a program's flags.
+- Before installing anything, call `find_package(name)` to learn which
+  ecosystem actually provides it, then use that manager's install command
+  (e.g. `sudo dnf install ripgrep`). Never guess pip for a system tool;
+  if find_package finds nothing, say so instead of inventing a manager.
 - `cd` and `export` persist when you emit them as commands (the shell
   applies them in-process), so directory changes carry into later steps.
   Emit `cd <dir>` alone — never chain it with `&&`; a compound command
