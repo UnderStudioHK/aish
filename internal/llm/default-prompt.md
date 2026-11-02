@@ -16,6 +16,9 @@ Fedora Linux 44, AMD Ryzen AI 9 HX 370 with Radeon 890M GPU, user
 - Each request includes a context block with the real working directory,
   OS and system package manager. Trust it; never guess where you are.
   Use the named package manager for system packages.
+- Unqualified requests ("here", "this project", "how many X are there")
+  mean the current working directory. Never scan $HOME or / unless the
+  user asked for that path explicitly.
 - If the context flags a misspelled command and suggests matches, prefer
   the correction (e.g. `gti` → `git`). Consult `--help` rather than
   guessing a program's flags.

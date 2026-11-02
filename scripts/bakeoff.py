@@ -48,6 +48,9 @@ SCENARIOS = [
     ("biggest files here",  "show me the biggest files in this directory", r"\b(du|find|ls)\b"),
     ("python version",      "which python version is installed", r"python3?(\.\d+)?\s+(-V|--version)"),
     ("process by name",     "is sshd running right now", r"\b(pgrep|ps|systemctl|pidof)\b"),
+    # scope: unqualified search must stay in the cwd (never $HOME / ~ / /home)
+    ("scope: count here",   "how many zentasks folders are there?",
+     r"^(?!.*(/home|\$HOME|~))(?!.*find\s+/)(?=.*\b(find|ls|du|fd)\b).*"),
 ]
 
 

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -99,6 +100,9 @@ func (r *Repl) handleIntent(request string) int {
 	if !r.readyLLM() {
 		return r.dir.RunNative(request)
 	}
+	r.mu.Lock()
+	r.currentReq = request
+	r.mu.Unlock()
 
 	// Exact repeat of a request that previously ran commands: replay those
 	// commands (gated as always) instead of asking the model to reconstruct
@@ -112,6 +116,7 @@ func (r *Repl) handleIntent(request string) int {
 		r.debugLog("replay: %d command(s)", len(cmds))
 		var summary strings.Builder
 		for _, cmd := range cmds {
+			r.scopeWarn(cmd)
 			lv := r.policy.Classify(cmd)
 			fmt.Printf("%s%s%s%s\n", colorFor(lv), cBold, cmd, cNorm)
 			if !r.mayRun(cmd, lv) {
@@ -228,6 +233,7 @@ func (r *Repl) executeCalls(calls []llm.ToolCall) bool {
 			r.mu.Unlock()
 			continue
 		}
+		r.scopeWarn(cmd)
 		lv := r.policy.Classify(cmd)
 		fmt.Printf("%s%s%s%s\n", colorFor(lv), cBold, cmd, cNorm)
 		if !r.mayRun(cmd, lv) {
@@ -275,6 +281,7 @@ func (r *Repl) findPackage(tc llm.ToolCall) {
 // runCommand executes one command (builtin-aware), returning model feedback.
 func (r *Repl) runCommand(cmd string) string {
 	if fb, handled := r.dir.ApplyIfBuiltin(cmd); handled {
+		r.audit(cmd, 0)
 		return fb
 	}
 	cctx, cancel := context.WithTimeout(context.Background(), r.cfg.CmdTimeout)
@@ -284,9 +291,46 @@ func (r *Repl) runCommand(cmd string) string {
 		out += "\nnote: cd inside a compound command runs in a subshell; " +
 			"the persistent working directory is unchanged. Emit a plain `cd <dir>` to change it."
 	}
+	r.audit(cmd, code)
 	r.lastCode = code
 	r.lastShown = code
 	return fmt.Sprintf("exit_code=%d\n%s", code, out)
+}
+
+// audit appends executed commands to <state>/commands.log for diagnosis.
+func (r *Repl) audit(cmd string, code int) {
+	if err := os.MkdirAll(r.cfg.StateDir, 0o755); err != nil {
+		return
+	}
+	f, err := os.OpenFile(filepath.Join(r.cfg.StateDir, "commands.log"),
+		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	wd, _ := os.Getwd()
+	fmt.Fprintf(f, "%s\t%s\t%d\t%s\n", time.Now().Format(time.RFC3339), wd, code, cmd)
+}
+
+// scopeWarn prints an advisory when a proposal leaves the current directory
+// for $HOME without the request asking for it.
+func (r *Repl) scopeWarn(cmd string) {
+	wd, _ := os.Getwd()
+	home, _ := os.UserHomeDir()
+	if home == "" || wd == home {
+		return
+	}
+	req := strings.ToLower(r.currentReq)
+	reqAsksHome := strings.Contains(req, "home") || strings.Contains(req, "~") ||
+		strings.Contains(req, home)
+	if reqAsksHome {
+		return
+	}
+	lo := strings.ToLower(cmd)
+	if strings.Contains(lo, strings.ToLower(home)) || strings.Contains(cmd, "$HOME") ||
+		strings.Contains(cmd, "~/") {
+		fmt.Printf("%s⚠ scope: searches %s while cwd is %s%s\n", cDim, home, wd, cNorm)
+	}
 }
 
 // ---- follow-up modes ----

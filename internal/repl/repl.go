@@ -59,6 +59,7 @@ type Repl struct {
 
 	replay     map[string][]string // request -> commands run for it
 	replayCmds []string            // commands run in the current request
+	currentReq string
 
 	// typo assistance cache
 	cmdOnce  sync.Once
@@ -176,6 +177,13 @@ func (r *Repl) Run() (int, error) {
 		r.uiMu.Unlock()
 		switch {
 		case err == nil:
+		case errors.Is(err, readline.ErrEsc):
+			// Esc: dismiss any pending follow-up without running anything.
+			if r.hasPending() {
+				fmt.Printf("%sdismissed%s\n", cDim, cNorm)
+			}
+			r.beginNewInput()
+			continue
 		case errors.Is(err, readline.ErrInterrupt):
 			r.beginNewInput()
 			continue
@@ -324,7 +332,8 @@ func (r *Repl) contextLine() string {
 		extra += " uv available."
 	}
 	return fmt.Sprintf(
-		"Current working directory: %s\nHome directory: %s\nOS: %s\n"+
+		"Search scope: the current working directory unless the user names another path.\n"+
+			"Current working directory: %s\nHome directory: %s\nOS: %s\n"+
 			"System package manager: %s. Use it for system packages; never "+
 			"use pip for system packages (use pipx/uv only for Python CLI tools).\n"+
 			"Python: %s.%s\nShell: /bin/sh. `cd` and `export` are applied "+
