@@ -58,3 +58,23 @@ func TestTypoHint(t *testing.T) {
 		t.Errorf("typoHint(natural sentence) = %q, want empty", h)
 	}
 }
+
+func TestReplayCache(t *testing.T) {
+	r := &Repl{replay: map[string][]string{}}
+	r.replayCmds = []string{"ls -la", "df -h /"}
+	r.saveReplay("list")
+	if got := r.replayFor("list"); len(got) != 2 || got[0] != "ls -la" {
+		t.Errorf("replayFor(list) = %v", got)
+	}
+	if got := r.replayFor("list "); len(got) != 2 {
+		t.Errorf("replayFor should trim: %v", got)
+	}
+	if got := r.replayFor("other"); len(got) != 0 {
+		t.Errorf("unknown request should not replay: %v", got)
+	}
+	got := r.replayFor("list")
+	got[0] = "mutated"
+	if r.replayFor("list")[0] == "mutated" {
+		t.Error("replayFor leaked its slice")
+	}
+}

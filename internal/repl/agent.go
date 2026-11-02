@@ -99,8 +99,46 @@ func (r *Repl) handleIntent(request string) int {
 	if !r.readyLLM() {
 		return r.dir.RunNative(request)
 	}
+
+	// Exact repeat of a request that previously ran commands: replay those
+	// commands (gated as always) instead of asking the model to reconstruct
+	// an answer from stale transcript content.
+	if cmds := r.replayFor(request); len(cmds) > 0 {
+		r.mu.Lock()
+		r.steps = 1
+		r.replayCmds = nil
+		r.appendTalkLocked(llm.Message{Role: "user", Content: request})
+		r.mu.Unlock()
+		r.debugLog("replay: %d command(s)", len(cmds))
+		var summary strings.Builder
+		for _, cmd := range cmds {
+			lv := r.policy.Classify(cmd)
+			fmt.Printf("%s%s%s%s\n", colorFor(lv), cBold, cmd, cNorm)
+			if !r.mayRun(cmd, lv) {
+				fmt.Fprintf(os.Stderr, "%saish: cancelled%s\n", cDim, cNorm)
+				return r.lastCode
+			}
+			result := r.runCommand(cmd)
+			fmt.Fprintf(&summary, "re-ran `%s`:\n%s\n", cmd, result)
+			r.mu.Lock()
+			r.replayCmds = append(r.replayCmds, cmd)
+			r.mu.Unlock()
+		}
+		if summary.Len() > 4000 {
+			summary.Reset() // do not dump huge output back into history
+		}
+		r.mu.Lock()
+		if summary.Len() > 0 {
+			r.appendTalkLocked(llm.Message{Role: "assistant", Content: summary.String()})
+		}
+		r.mu.Unlock()
+		r.saveReplay(request)
+		return r.lastCode
+	}
+
 	r.mu.Lock()
 	r.steps = 1
+	r.replayCmds = nil
 	r.appendTalkLocked(llm.Message{Role: "user", Content: request})
 	msgs := append([]llm.Message(nil), r.talk...)
 	r.mu.Unlock()
@@ -128,15 +166,42 @@ func (r *Repl) handleIntent(request string) int {
 	r.mu.Unlock()
 
 	if len(asMsg.ToolCalls) == 0 {
-		r.armFollowUp()
+		// The model answered without acting: it is done. Scheduling a
+		// follow-up here would burn a turn and invent further work.
 		return r.lastCode
 	}
 	if !r.executeCalls(asMsg.ToolCalls) {
 		// declined: turn ends here
 		return r.lastCode
 	}
+	r.saveReplay(request)
 	r.armFollowUp()
 	return r.lastCode
+}
+
+// replayFor returns the commands recorded for an identical earlier request.
+func (r *Repl) replayFor(request string) []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cmds := r.replay[strings.TrimSpace(request)]
+	return append([]string(nil), cmds...)
+}
+
+// saveReplay records the commands just run under the request text.
+func (r *Repl) saveReplay(request string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.replayCmds) == 0 {
+		return
+	}
+	if r.replay == nil {
+		r.replay = map[string][]string{}
+	}
+	if len(r.replay) > 128 { // bounded, crude but safe
+		r.replay = map[string][]string{}
+	}
+	r.replay[strings.TrimSpace(request)] = append([]string(nil), r.replayCmds...)
+	r.replayCmds = nil
 }
 
 // executeCalls gates and runs a batch of tool calls, appending results to
@@ -181,6 +246,7 @@ func (r *Repl) executeCalls(calls []llm.ToolCall) bool {
 		result := r.runCommand(cmd)
 		r.mu.Lock()
 		r.appendTalkLocked(llm.Message{Role: "tool", ToolCallID: tc.ID, Content: result})
+		r.replayCmds = append(r.replayCmds, cmd)
 		r.mu.Unlock()
 	}
 	return true

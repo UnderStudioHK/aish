@@ -33,6 +33,13 @@ a typo aid flags unknown first words with the closest real commands
 (`gti` → `git`) using an edit-distance lookup + the system dictionary
 (English words like `list` are not treated as typos).
 
+### Repeating a request
+
+Typing the same request twice re-runs the commands it produced before
+(safety gates still apply) instead of asking the model again — so output is
+always fresh and latency is zero. This is why repeating `list` prints a new
+directory listing rather than a narration from stale context.
+
 ### Multi-turn feel
 
 After a command runs, the prompt returns **immediately** — the model's

@@ -57,6 +57,9 @@ type Repl struct {
 	cancel   context.CancelFunc
 	pending  []llm.ToolCall
 
+	replay     map[string][]string // request -> commands run for it
+	replayCmds []string            // commands run in the current request
+
 	// typo assistance cache
 	cmdOnce  sync.Once
 	cmdNames []string
@@ -73,7 +76,8 @@ type Repl struct {
 func New(cfg *config.Config, dir *execx.Director, h *history.Store,
 	c *llm.Client, s *servermgmt.Server) *Repl {
 	return &Repl{cfg: cfg, dir: dir, hist: h, llm: c, srv: s,
-		policy: safety.NewPolicy(cfg.Confirm), dict: map[string]bool{}}
+		policy: safety.NewPolicy(cfg.Confirm), dict: map[string]bool{},
+		replay: map[string][]string{}}
 }
 
 func shortCwd() string {
