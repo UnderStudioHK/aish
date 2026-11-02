@@ -33,6 +33,10 @@ type Config struct {
 	KeepAlive     bool
 	ServerLogPath string
 
+	// Prompt (display)
+	PromptStyle string // "full" | "minimal"
+	PromptTmpl  string // optional template file
+
 	// State
 	PromptFile  string
 	StateDir    string
@@ -72,6 +76,8 @@ func Load() (*Config, error) {
 		ModelPath:    home(envStr("AISH_MODEL", "~/models/LFM2.5-2.6B-Q4_0.gguf")),
 		KeepAlive:    envBool("AISH_KEEP_ALIVE", false),
 		PromptFile:   home(envStr("AISH_PROMPT_FILE", "~/.config/aish/prompt.md")),
+		PromptStyle:  envStr("AISH_PROMPT_STYLE", "full"),
+		PromptTmpl:   home(envStr("AISH_PROMPT_TMPL", "~/.config/aish/prompt.tmpl")),
 		StateDir:     home(envStr("AISH_STATE_DIR", "~/.local/state/aish")),
 	}
 	c.HistoryPath = filepath.Join(c.StateDir, "history")
@@ -82,6 +88,11 @@ func Load() (*Config, error) {
 	case "safe-auto", "always", "never":
 	default:
 		return nil, fmt.Errorf("AISH_CONFIRM=%q: want safe-auto|always|never", c.Confirm)
+	}
+	switch c.PromptStyle {
+	case "full", "minimal":
+	default:
+		return nil, fmt.Errorf("AISH_PROMPT_STYLE=%q: want full|minimal", c.PromptStyle)
 	}
 	switch c.FollowUp {
 	case "eager", "lazy", "off":

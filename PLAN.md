@@ -127,6 +127,10 @@ AMD Ryzen AI 9 HX 370 (Radeon 890M), user `lvturner`, zsh is the fallback execut
 - **Esc cancel** (done): vendored `third_party/readline` with a Linux
   `select(2)` ESC-timeout patch; `Esc` dismisses a queued follow-up or
   clears the line.
+- **Prompt & behavior docs** (done): Starship-style prompt (smart path,
+  git branch/dirty, `✗N`, `⏎` pending marker, root glyph), configurable via
+  `AISH_PROMPT_STYLE`/`AISH_PROMPT_TMPL`; full behavior reference in
+  `docs/behavior.md`.
 - **F1 — instant prompt & eager follow-up** (done): sync turn + background
   follow-up with queued proposals, prompt-safe inline hints (readline
   Refresh), Enter-to-accept, cancel/dismiss on new input, epoch-guarded

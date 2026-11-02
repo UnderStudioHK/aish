@@ -87,6 +87,8 @@ func (r *Repl) showHint(text string) {
 	defer r.uiMu.Unlock()
 	if r.promptActive && r.rl != nil {
 		fmt.Fprintf(r.rl.Stdout(), "\r\x1b[K%s%s%s\n", cDim, text, cNorm)
+		// repaint so state markers (pending ⏎) appear in the prompt
+		r.rl.SetPrompt(r.promptString())
 		r.rl.Operation.Refresh()
 		return
 	}

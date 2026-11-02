@@ -34,6 +34,19 @@ a typo aid flags unknown first words with the closest real commands
 (`gti` → `git`) using an edit-distance lookup + the system dictionary
 (English words like `list` are not treated as typos).
 
+### Prompt
+
+```
+~/D/C/aish  master*  ✗1 ⏎ ❯
+```
+
+Path (smart-abbreviated), git branch with `*` when dirty, `✗N` only on
+failure, `⏎` while a follow-up is queued, and a colored `❯` (`#` as root).
+`AISH_PROMPT_STYLE=minimal` shows `cwd ❯` only; a custom template can be
+dropped at `~/.config/aish/prompt.tmpl` (`{cwd} {branch} {dirty} {exit}
+{pending} {busy} {user} {host} {glyph} …`). See
+[docs/behavior.md](docs/behavior.md#7-prompt-display) for the full table.
+
 ### Grounding & scope
 
 Unqualified instructions ("here", "this project", "how many X are there")
@@ -115,6 +128,8 @@ prompt-dependent.
 | Confirm policy | `AISH_CONFIRM` | `safe-auto` | `safe-auto` / `always` / `never` |
 | Narrate results | `AISH_NARRATE` | `0` | print the model's explanation after commands (default: command output speaks for itself) |
 | Follow-up mode | `AISH_FOLLOWUP` | `eager` | `eager` (background) / `lazy` (Enter to continue) / `off` |
+| Prompt style | `AISH_PROMPT_STYLE` | `full` | `full` / `minimal` |
+| Prompt template | `AISH_PROMPT_TMPL` | `~/.config/aish/prompt.tmpl` | optional placeholder template |
 | Server host/port | `AISH_LLM_HOST` / `AISH_LLM_PORT` | `127.0.0.1` / `8081` | llama-server endpoint |
 | Model server ctx | `AISH_LLM_CTX` | `32768` | context length passed to llama-server |
 | Server binary | `AISH_LLM_BIN` | `~/tools/llama-b12034/llama-server` | llama-server executable |
@@ -133,6 +148,26 @@ managers, service restarts, `kill`…) requires typing `yes`. `e` opens
 prompts for safe commands only — destructive still asks. There is no way to
 disable the destructive gate except by editing source (by design).
 
+## Documentation
+
+- [docs/behavior.md](docs/behavior.md) — complete behavior reference:
+  routing & replay, tool contract, status lines, follow-ups, safety,
+  scope/grounding, prompt, configuration, audit log, troubleshooting.
+- [PLAN.md](PLAN.md) — design rationale and milestones.
+
 ## Project layout
 
-See [PLAN.md](PLAN.md) for the design rationale and milestones.
+```
+cmd/aish/            entry point, flags, doctor dispatch
+internal/repl/       REPL loop, agent (sync turn + follow-up), routing, typo aid
+internal/prompt/     prompt rendering + cached git detection
+internal/execx/      dispatch, builtins, tee/captured execution, state
+internal/llm/        OpenAI-compatible client, tool schemas, system prompt
+internal/safety/     classifier + confirmation UI
+internal/servermgmt/ llama-server lifecycle
+internal/pkgfind/    dnf/flatpak package resolution
+internal/config/     env/flag knobs
+internal/history/    history store
+third_party/readline patched line editor (Esc timeout)
+scripts/bakeoff.py   model comparison harness
+```

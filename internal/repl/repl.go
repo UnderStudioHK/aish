@@ -20,8 +20,10 @@ import (
 	"aish/internal/execx"
 	"aish/internal/history"
 	"aish/internal/llm"
+	"aish/internal/prompt"
 	"aish/internal/safety"
 	"aish/internal/servermgmt"
+	"golang.org/x/term"
 )
 
 const (
@@ -84,35 +86,44 @@ func New(cfg *config.Config, dir *execx.Director, h *history.Store,
 		replay: map[string][]string{}}
 }
 
-func shortCwd() string {
-	wd, err := os.Getwd()
-	if err != nil {
-		return "?"
-	}
-	home, _ := os.UserHomeDir()
-	if wd == home {
-		return "~"
-	}
-	if home != "" && strings.HasPrefix(wd, home+string(os.PathSeparator)) {
-		rel := strings.TrimPrefix(wd, home+string(os.PathSeparator))
-		parts := strings.Split(rel, string(os.PathSeparator))
-		if len(parts) > 2 {
-			parts = parts[len(parts)-2:]
-		}
-		return strings.Join(parts, "/")
-	}
-	return filepath.Base(wd)
-}
-
+// promptString renders the interactive prompt from live state.
 func (r *Repl) promptString() string {
-	if r.lastShown == 0 {
-		return fmt.Sprintf("%s%s (aish)%s ", cCyan, shortCwd(), cNorm)
+	wd, _ := os.Getwd()
+	home, _ := os.UserHomeDir()
+	user := os.Getenv("USER")
+	host, _ := os.Hostname()
+
+	r.mu.Lock()
+	pending := len(r.pending) > 0
+	busy := r.inFlight
+	r.mu.Unlock()
+
+	git := prompt.GitFor(wd)
+	color := os.Getenv("NO_COLOR") == "" && term.IsTerminal(int(os.Stdout.Fd()))
+
+	var tmpl string
+	if r.cfg.PromptTmpl != "" {
+		if b, err := os.ReadFile(r.cfg.PromptTmpl); err == nil {
+			tmpl = strings.TrimRight(string(b), "\n")
+		}
 	}
-	color := cDim
-	if r.lastShown < 0 {
-		color = cRed
-	}
-	return fmt.Sprintf("%s%s (aish)%s %s[%d]%s ", cCyan, shortCwd(), cNorm, color, r.lastShown, cNorm)
+
+	return prompt.Render(prompt.State{
+		Cwd:      wd,
+		Home:     home,
+		Exit:     r.lastShown,
+		Pending:  pending,
+		Busy:     busy,
+		Root:     os.Geteuid() == 0,
+		Color:    color,
+		Branch:   git.Branch,
+		Detached: git.Detached,
+		Dirty:    git.Dirty,
+		Style:    r.cfg.PromptStyle,
+		Template: tmpl,
+		User:     user,
+		Host:     host,
+	})
 }
 
 func (r *Repl) completer() *readline.PrefixCompleter {

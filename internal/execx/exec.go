@@ -86,6 +86,8 @@ func (d *Director) Builtin(line string, h Hooks) (bool, bool) {
 			"  !<cmd>        force native execution (no model)",
 			"  ??<question>  ask-only: the model answers without running anything",
 			"  cd, export    builtins; state persists across prompts",
+			"  Enter (empty) run the queued follow-up suggestion",
+			"  Esc           dismiss a queued suggestion / clear the line",
 			"  help, history this; recent lines",
 			"  exit, Ctrl+D  leave aish",
 			"",
