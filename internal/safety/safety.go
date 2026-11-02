@@ -96,7 +96,7 @@ func Ask(cmd string, lv Level) (string, bool) {
 	if lv == Never {
 		diff = "type 'yes'"
 	}
-	fmt.Fprintf(os.Stderr, "\n\x1b[33m%s\x1b[0m\n  run (%s, n=cancel, e=edit)? ", cmd, diff)
+	fmt.Fprintf(os.Stderr, "  run (%s, n=cancel, e=edit)? ", diff)
 	sc := bufio.NewReader(os.Stdin)
 	line, err := sc.ReadString('\n')
 	if err != nil {

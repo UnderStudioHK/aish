@@ -326,6 +326,7 @@ func (r *Repl) intentLoop(request string) int {
 		}
 		msgs = append(msgs, asMsg)
 
+		declined := false
 		for _, tc := range asMsg.ToolCalls {
 			cmd, ok := llm.CommandOf(tc)
 			if !ok {
@@ -336,9 +337,8 @@ func (r *Repl) intentLoop(request string) int {
 			lv := r.policy.Classify(cmd)
 			fmt.Printf("%s%s%s%s\n", colorFor(lv), cBold, cmd, cNorm)
 			if !r.mayRun(cmd, lv) {
-				msgs = append(msgs, llm.Message{Role: "tool", ToolCallID: tc.ID,
-					Content: "user declined the command; propose an alternative only if asked"})
-				continue
+				declined = true
+				break
 			}
 			cctx, ccancel := context.WithTimeout(context.Background(), r.cfg.CmdTimeout)
 			out, code, _ := r.dir.RunCaptured(cctx, cmd)
@@ -348,6 +348,13 @@ func (r *Repl) intentLoop(request string) int {
 			r.lastCode = code
 			r.lastShown = code
 			dump(fmt.Sprintf("post_tool_%d", step), msgs)
+		}
+		if declined {
+			fmt.Fprintf(os.Stderr, "%saish: cancelled%s\n", cDim, cNorm)
+			if lastContent != "" {
+				r.remember(request, lastContent)
+			}
+			return r.lastCode
 		}
 	}
 	fmt.Fprintf(os.Stderr, "%saish: stopped after %d steps%s\n", cDim, r.cfg.MaxSteps, cNorm)
