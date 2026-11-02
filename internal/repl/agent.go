@@ -37,6 +37,8 @@ func (r *Repl) beginNewInput() {
 		r.pending = nil
 	}
 	r.steps = 0
+	r.lastCmds = nil
+	r.lastOK = false
 }
 
 // appendTalkLocked appends messages and trims to the configured depth.
@@ -212,6 +214,27 @@ func (r *Repl) saveReplay(request string) {
 // executeCalls gates and runs a batch of tool calls, appending results to
 // the conversation. Returns false if the user declined.
 func (r *Repl) executeCalls(calls []llm.ToolCall) bool {
+	// Guard against the model re-proposing the identical command inside a
+	// chain (common when a command legitimately has no output).
+	if r.isDuplicateBatch(calls) {
+		r.mu.Lock()
+		for _, tc := range calls {
+			r.appendTalkLocked(llm.Message{Role: "tool", ToolCallID: tc.ID,
+				Content: "not run: identical to the command just executed (see its output)"})
+		}
+		r.mu.Unlock()
+		fmt.Printf("%s↳ same command as the previous step; stopping%s\n", cDim, cNorm)
+		return false
+	}
+
+	allOK := true
+	defer func() {
+		r.mu.Lock()
+		r.lastCmds = batchCommands(calls)
+		r.lastOK = allOK
+		r.mu.Unlock()
+	}()
+
 	for _, tc := range calls {
 		// find_package is read-only: resolve locally, no gate.
 		if tc.Func.Name == "find_package" {
@@ -250,6 +273,9 @@ func (r *Repl) executeCalls(calls []llm.ToolCall) bool {
 			return false
 		}
 		result := r.runCommand(cmd)
+		if r.lastCode != 0 {
+			allOK = false
+		}
 		r.mu.Lock()
 		r.appendTalkLocked(llm.Message{Role: "tool", ToolCallID: tc.ID, Content: result})
 		r.replayCmds = append(r.replayCmds, cmd)
@@ -294,7 +320,21 @@ func (r *Repl) runCommand(cmd string) string {
 	r.audit(cmd, code)
 	r.lastCode = code
 	r.lastShown = code
-	return fmt.Sprintf("exit_code=%d\n%s", code, out)
+
+	// Make silent outcomes visible to the user: an empty success and a
+	// failure with no message both look like "nothing happened" otherwise.
+	empty := strings.TrimSpace(out) == ""
+	r.lastEmpty = empty
+	if code != 0 {
+		fmt.Fprintf(os.Stderr, "%s✗ exit %d%s\n", cDim, code, cNorm)
+	} else if empty {
+		fmt.Printf("%s(no output, exit 0)%s\n", cDim, cNorm)
+	}
+	feedback := fmt.Sprintf("exit_code=%d\n%s", code, out)
+	if empty {
+		feedback += "(no output — the command succeeded silently)\n"
+	}
+	return feedback
 }
 
 // audit appends executed commands to <state>/commands.log for diagnosis.
@@ -310,6 +350,61 @@ func (r *Repl) audit(cmd string, code int) {
 	defer f.Close()
 	wd, _ := os.Getwd()
 	fmt.Fprintf(f, "%s\t%s\t%d\t%s\n", time.Now().Format(time.RFC3339), wd, code, cmd)
+}
+
+// batchCommands extracts run_command strings from a batch.
+func batchCommands(calls []llm.ToolCall) []string {
+	var out []string
+	for _, tc := range calls {
+		if tc.Func.Name == "find_package" {
+			continue
+		}
+		if cmd, ok := llm.CommandOf(tc); ok {
+			out = append(out, cmd)
+		}
+	}
+	return out
+}
+
+// normalizeCmd strips output-redirection / fallback noise so cosmetic
+// rewrites of the same command still count as duplicates.
+func normalizeCmd(cmd string) string {
+	c := strings.TrimSpace(cmd)
+	for _, cut := range []string{"||", "&&", ";"} {
+		if i := strings.Index(c, cut); i >= 0 {
+			c = c[:i]
+		}
+	}
+	c = strings.TrimSpace(c)
+	for _, suffix := range []string{"2>&1", "2>/dev/null", "2> /dev/null", "1>/dev/null"} {
+		c = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(c), suffix))
+	}
+	return c
+}
+
+// dupBatchLocked: caller holds r.mu.
+func (r *Repl) dupBatchLocked(calls []llm.ToolCall) bool {
+	if !r.lastOK || len(r.lastCmds) == 0 {
+		return false
+	}
+	cmds := batchCommands(calls)
+	if len(cmds) != len(r.lastCmds) {
+		return false
+	}
+	for i := range cmds {
+		if normalizeCmd(cmds[i]) != normalizeCmd(r.lastCmds[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// isDuplicateBatch reports whether this chain is re-proposing the same
+// command batch that just ran successfully.
+func (r *Repl) isDuplicateBatch(calls []llm.ToolCall) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.dupBatchLocked(calls)
 }
 
 // scopeWarn prints an advisory when a proposal leaves the current directory
@@ -403,16 +498,33 @@ func (r *Repl) startFollowUp() {
 		r.cancel = nil
 		r.appendTalkLocked(msg)
 		var calls []llm.ToolCall
+		dup := len(msg.ToolCalls) > 0 && r.dupBatchLocked(msg.ToolCalls)
 		if len(msg.ToolCalls) > 0 {
 			calls = msg.ToolCalls
-			r.pending = append([]llm.ToolCall(nil), calls...)
+			if dup {
+				// Close the tool-call pair without running anything.
+				for _, tc := range calls {
+					r.appendTalkLocked(llm.Message{Role: "tool", ToolCallID: tc.ID,
+						Content: "not run: identical to the command just executed"})
+				}
+			} else {
+				r.pending = append([]llm.ToolCall(nil), calls...)
+			}
 		}
+		emptyOut := r.lastEmpty
 		r.mu.Unlock()
+
+		if dup {
+			fmt.Printf("%s↳ repeated command ignored%s\n", cDim, cNorm)
+			return
+		}
 
 		switch {
 		case len(calls) > 0:
 			r.showHint("↳ follow-up: " + describeCalls(calls) + "   (⏎ run · any input dismisses)")
-		case r.cfg.Narrate && strings.TrimSpace(msg.Content) != "":
+		case strings.TrimSpace(msg.Content) != "" && (r.cfg.Narrate || emptyOut):
+			// A silent-success command benefits from the model's one-line
+			// explanation even when narration is otherwise off.
 			r.showHint(llm.Sanitize(msg.Content))
 		}
 	}()

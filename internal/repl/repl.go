@@ -60,6 +60,9 @@ type Repl struct {
 	replay     map[string][]string // request -> commands run for it
 	replayCmds []string            // commands run in the current request
 	currentReq string
+	lastCmds   []string // last executed batch (duplicate guard)
+	lastOK     bool     // last batch fully succeeded
+	lastEmpty  bool     // last command produced no output
 
 	// typo assistance cache
 	cmdOnce  sync.Once
@@ -86,8 +89,17 @@ func shortCwd() string {
 	if err != nil {
 		return "?"
 	}
-	if home, _ := os.UserHomeDir(); wd == home {
+	home, _ := os.UserHomeDir()
+	if wd == home {
 		return "~"
+	}
+	if home != "" && strings.HasPrefix(wd, home+string(os.PathSeparator)) {
+		rel := strings.TrimPrefix(wd, home+string(os.PathSeparator))
+		parts := strings.Split(rel, string(os.PathSeparator))
+		if len(parts) > 2 {
+			parts = parts[len(parts)-2:]
+		}
+		return strings.Join(parts, "/")
 	}
 	return filepath.Base(wd)
 }
