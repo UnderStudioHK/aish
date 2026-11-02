@@ -19,6 +19,7 @@ ps aux --sort=-%cpu | head -8
   `run_command` tool calls; the REPL gates, runs, and reports back.
 - `!cmd` force native, `!!` repeat last, `??question` ask-only (no commands),
   `cd`/`export` persist across prompts, `Ctrl-C` cancels the running child.
+- `Esc` dismisses a queued follow-up suggestion or clears the current line.
 
 ### What the model can call
 
@@ -32,6 +33,15 @@ The request context also carries live OS/package-manager/Python facts, and
 a typo aid flags unknown first words with the closest real commands
 (`gti` → `git`) using an edit-distance lookup + the system dictionary
 (English words like `list` are not treated as typos).
+
+### Grounding & scope
+
+Unqualified instructions ("here", "this project", "how many X are there")
+are scoped to the **current working directory**; the model is told this
+explicitly and stops defaulting to `$HOME` or `/`. A dim warning appears
+when a proposal leaves the cwd for `$HOME` without being asked. Every
+executed command (typed, proposed, replayed) is appended to
+`~/.local/state/aish/commands.log` with cwd and exit code for debugging.
 
 ### Repeating a request
 
@@ -71,6 +81,12 @@ kept intact for your next request. `AISH_FOLLOWUP=lazy` instead shows
 ```
 go build -o bin/aish ./cmd/aish
 ```
+
+`go.mod` replaces `github.com/chzyer/readline` with `third_party/readline`
+(MIT). The vendored copy carries one small patch: a bare `ESC` would
+normally block waiting for the next byte to disambiguate escape sequences,
+so we poll the tty for ~60 ms (`select(2)`) and surface it as a standalone
+key — used to dismiss follow-up suggestions.
 
 ## Run
 

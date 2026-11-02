@@ -121,7 +121,12 @@ AMD Ryzen AI 9 HX 370 (Radeon 890M), user `lvturner`, zsh is the fallback execut
 - **Tools & grounding** (done): `find_package(name)` local resolver
   (dnf/flatpak) for package provenance; context block with OS, package
   manager, Python; typo hints from PATH edit-distance + system dictionary.
-  Bake-off harness `scripts/bakeoff.py` (16 tasks).
+  Bake-off harness `scripts/bakeoff.py` (17 tasks). Search scope defaults
+  to the cwd (advisory warning when a proposal leaves it) and every executed
+  command is audited to `commands.log`.
+- **Esc cancel** (done): vendored `third_party/readline` with a Linux
+  `select(2)` ESC-timeout patch; `Esc` dismisses a queued follow-up or
+  clears the line.
 - **F1 — instant prompt & eager follow-up** (done): sync turn + background
   follow-up with queued proposals, prompt-safe inline hints (readline
   Refresh), Enter-to-accept, cancel/dismiss on new input, epoch-guarded
