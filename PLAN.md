@@ -64,6 +64,7 @@ Precedence: **flag > env > `~/.config/aish/config.toml` (optional) > default**.
 | LLM call timeout | `AISH_LLM_TIMEOUT` | `2m` | per model request |
 | Confirm policy | `AISH_CONFIRM` | `safe-auto` | `safe-auto` / `always` / `never` |
 | Narrate results | `AISH_NARRATE` | `0` | print the model explanation after commands |
+| Follow-up mode | `AISH_FOLLOWUP` | `eager` | background follow-up / Enter-to-continue / off |
 | Server port | `AISH_LLM_PORT` | `8081` | also `AISH_LLM_HOST`, `AISH_LLM_CTX` |
 | Server lifecycle | `AISH_KEEP_ALIVE` | `0` | `1` = leave llama-server running on exit |
 | System prompt | `AISH_PROMPT_FILE` | `~/.config/aish/prompt.md` | missing → embedded default |
@@ -115,6 +116,10 @@ AMD Ryzen AI 9 HX 370 (Radeon 890M), user `lvturner`, zsh is the fallback execut
 - **M3 — agentic loop & ergonomics** (done): multi-step loop (AISH_MAX_STEPS),
   session transcript context (user/assistant pairs), `??` mode, `!` prefix,
   PATH completion, special-token sanitizing, robust tool-arg recovery.
+- **F1 — instant prompt & eager follow-up** (done): sync turn + background
+  follow-up with queued proposals, prompt-safe inline hints (readline
+  Refresh), Enter-to-accept, cancel/dismiss on new input, epoch-guarded
+  state, `AISH_FOLLOWUP=eager|lazy|off`, race-tested under `-race`.
 - **M4 — polish** (partial): CLI flags (`--max-steps`, `--model`, `--port`,
   `--ctx`, `--confirm`, `--version`), `aish doctor` done; remaining:
   configurable never-auto pattern list, optional systemd user unit, README final pass.

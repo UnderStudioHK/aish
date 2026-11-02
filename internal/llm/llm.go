@@ -95,18 +95,18 @@ var runCommandTool = map[string]any{
 }
 
 type chatRequest struct {
-	Model         string               `json:"model"`
-	Messages      []Message            `json:"messages"`
-	Tools         []map[string]any     `json:"tools"`
-	ToolChoice    string               `json:"tool_choice,omitempty"`
-	Temperature   float64              `json:"temperature,omitempty"`
-	Stream        bool                 `json:"stream"`
-	ParallelTools bool                 `json:"parallel_tool_calls,omitempty"`
+	Model         string           `json:"model"`
+	Messages      []Message        `json:"messages"`
+	Tools         []map[string]any `json:"tools"`
+	ToolChoice    string           `json:"tool_choice,omitempty"`
+	Temperature   float64          `json:"temperature,omitempty"`
+	Stream        bool             `json:"stream"`
+	ParallelTools bool             `json:"parallel_tool_calls,omitempty"`
 }
 
 type chatChoice struct {
-	Message      Message  `json:"message"`
-	FinishRreason string `json:"finish_reason"`
+	Message       Message `json:"message"`
+	FinishRreason string  `json:"finish_reason"`
 }
 
 type chatResponse struct {

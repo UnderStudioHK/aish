@@ -2,7 +2,6 @@
 package repl
 
 import (
-	"encoding/json"
 	"context"
 	"errors"
 	"fmt"
@@ -14,7 +13,6 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-	"time"
 
 	"github.com/chzyer/readline"
 
@@ -50,7 +48,20 @@ type Repl struct {
 	srvOnce sync.Once
 	srvStop func()
 
-	talk []llm.Message // session transcript (user/assistant pairs)
+	// agent state (r.mu)
+	talk     []llm.Message // full conversation incl. tool exchanges
+	steps    int
+	epoch    uint64
+	inFlight bool
+	cancel   context.CancelFunc
+	pending  []llm.ToolCall
+
+	// ui state
+	mu           sync.Mutex // guards the fields above
+	llmMu        sync.Mutex // single-flight model calls
+	uiMu         sync.Mutex // guards prompt-active printing
+	promptActive bool
+	rl           *readline.Instance
 }
 
 func New(cfg *config.Config, dir *execx.Director, h *history.Store,
@@ -89,7 +100,9 @@ func (r *Repl) completer() *readline.PrefixCompleter {
 			seen[w] = true
 		}
 	}
-	add("!"); add("??"); add("export")
+	add("!")
+	add("??")
+	add("export")
 	for _, b := range []string{"cd", "pwd", "export", "exit", "help", "history", "env"} {
 		add(b)
 	}
@@ -141,14 +154,22 @@ func (r *Repl) Run() (int, error) {
 	if err != nil {
 		return 1, err
 	}
+	r.rl = rl
 	defer rl.Close()
 
 	for {
 		rl.SetPrompt(r.promptString())
+		r.uiMu.Lock()
+		r.promptActive = true
+		r.uiMu.Unlock()
 		line, err := rl.Readline()
+		r.uiMu.Lock()
+		r.promptActive = false
+		r.uiMu.Unlock()
 		switch {
 		case err == nil:
 		case errors.Is(err, readline.ErrInterrupt):
+			r.beginNewInput()
 			continue
 		case errors.Is(err, io.EOF):
 			fmt.Println()
@@ -158,13 +179,24 @@ func (r *Repl) Run() (int, error) {
 		}
 		line = strings.TrimSpace(line)
 		if line == "" {
+			// Empty Enter: accept a queued follow-up, else "continue" in lazy mode.
+			if r.hasPending() {
+				r.acceptPending()
+				continue
+			}
+			if r.cfg.FollowUp == "lazy" && r.cfg.Enabled() {
+				r.continueSync()
+			}
 			continue
 		}
+		// Any real input wins over queued/background work.
+		r.beginNewInput()
 		// history persistence is owned by readline's HistoryFile (plain lines);
 		// Store is the shared reader for the history builtin + model context.
 
 		switch {
 		case line == "exit" || line == "quit":
+			r.beginNewInput()
 			return r.lastCode, nil
 		case line == "!!":
 			if r.dir.LastLine == "" {
@@ -208,7 +240,7 @@ func (r *Repl) dispatch(line string) int {
 	if !r.cfg.Enabled() {
 		return r.dir.RunNative(line)
 	}
-	return r.intentLoop(line)
+	return r.handleIntent(line)
 }
 
 // fastNative decides whether a line is unambiguous plain shell.
@@ -268,7 +300,7 @@ func (r *Repl) askOnly(q string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), r.cfg.LLMTimeout)
 	defer cancel()
-	msg, err := r.llm.Turn(ctx, []llm.Message{{Role: "user", Content: q}}, false, r.contextLine())
+	msg, err := r.llmTurn(ctx, []llm.Message{{Role: "user", Content: q}}, false)
 	if err != nil {
 		fmt.Printf("%saish: %v%s\n", cRed, err, cNorm)
 		return
@@ -287,126 +319,6 @@ func (r *Repl) readyLLM() bool {
 		return false
 	}
 	return true
-}
-
-// intentLoop drives the run_command tool loop; returns last exit code.
-func (r *Repl) intentLoop(request string) int {
-	if !r.readyLLM() {
-		return r.dir.RunNative(request)
-	}
-
-	var msgs []llm.Message
-	// Prior turns as real user/assistant pairs (bounded by AISH_HISTORY_TURNS).
-	msgs = append(msgs, r.talk...)
-	msgs = append(msgs, llm.Message{Role: "user", Content: request})
-
-	start := time.Now()
-	var lastContent string
-	executedAny := false
-	debugDump := os.Getenv("AISH_DEBUG") != ""
-	dump := func(stage string, msgs []llm.Message) {
-		if !debugDump {
-			return
-		}
-		b, _ := json.MarshalIndent(msgs, "", " ")
-		_ = os.WriteFile("/tmp/opencode/aish_dbg_"+stage+".json", b, 0o644)
-	}
-	defer func() {
-		if debugDump {
-			fmt.Fprintf(os.Stderr, "%s[%s model time]%s\n", cDim, time.Since(start).Round(100*time.Millisecond), cNorm)
-		}
-	}()
-
-	for step := 0; step < r.cfg.MaxSteps; step++ {
-		dump(fmt.Sprintf("req_%d", step), msgs)
-		tctx, cancel := context.WithTimeout(context.Background(), r.cfg.LLMTimeout)
-		asMsg, err := r.llm.Turn(tctx, msgs, true, r.contextLine())
-		cancel()
-		if err != nil {
-			fmt.Printf("%saish: %v%s\n", cRed, err, cNorm)
-			return -1
-		}
-		if strings.TrimSpace(asMsg.Content) != "" {
-			lastContent = llm.Sanitize(asMsg.Content)
-			// Commentary accompanying tool calls (e.g. a consequence
-			// warning) is always worth showing. A pure final answer after
-			// commands already printed their own output is noise: keep it
-			// only when narration was requested.
-			if len(asMsg.ToolCalls) > 0 || !executedAny || r.cfg.Narrate {
-				fmt.Printf("%s%s%s\n", cYell, lastContent, cNorm)
-			}
-			if len(asMsg.ToolCalls) == 0 {
-				r.remember(request, lastContent)
-				return r.lastCode
-			}
-		}
-		if len(asMsg.ToolCalls) == 0 {
-			r.remember(request, lastContent)
-			return r.lastCode
-		}
-		msgs = append(msgs, asMsg)
-
-		declined := false
-		for _, tc := range asMsg.ToolCalls {
-			cmd, ok := llm.CommandOf(tc)
-			if !ok {
-				msgs = append(msgs, llm.Message{Role: "tool", ToolCallID: tc.ID,
-					Content: "error: unreadable tool arguments"})
-				continue
-			}
-			lv := r.policy.Classify(cmd)
-			fmt.Printf("%s%s%s%s\n", colorFor(lv), cBold, cmd, cNorm)
-			if !r.mayRun(cmd, lv) {
-				declined = true
-				break
-			}
-			// cd/export must persist in the REPL process, not a subshell.
-			if fb, handled := r.dir.ApplyIfBuiltin(cmd); handled {
-				msgs = append(msgs, llm.Message{Role: "tool", ToolCallID: tc.ID, Content: fb})
-				executedAny = true
-				continue
-			}
-			cctx, ccancel := context.WithTimeout(context.Background(), r.cfg.CmdTimeout)
-			out, code, _ := r.dir.RunTee(cctx, cmd)
-			ccancel()
-			executedAny = true
-			if strings.HasPrefix(cmd, "cd ") || cmd == "cd" {
-				out += "\nnote: cd inside a compound command runs in a subshell; " +
-					"the persistent working directory is unchanged. Emit a plain `cd <dir>` to change it."
-			}
-			msgs = append(msgs, llm.Message{Role: "tool", ToolCallID: tc.ID,
-				Content: fmt.Sprintf("exit_code=%d\n%s", code, out)})
-			r.lastCode = code
-			r.lastShown = code
-			dump(fmt.Sprintf("post_tool_%d", step), msgs)
-		}
-		if declined {
-			fmt.Fprintf(os.Stderr, "%saish: cancelled%s\n", cDim, cNorm)
-			if lastContent != "" {
-				r.remember(request, lastContent)
-			}
-			return r.lastCode
-		}
-	}
-	if debugDump {
-		fmt.Fprintf(os.Stderr, "%saish: stopped after %d steps%s\n", cDim, r.cfg.MaxSteps, cNorm)
-	}
-	if lastContent != "" {
-		r.remember(request, lastContent)
-	}
-	return r.lastCode
-}
-
-// remember stores one completed user exchange for next-turn context.
-func (r *Repl) remember(request string, final string) {
-	r.talk = append(r.talk,
-		llm.Message{Role: "user", Content: request},
-		llm.Message{Role: "assistant", Content: final})
-	// keep at most HistoryTurns pairs
-	max := 2 * r.cfg.HistoryTurns
-	if len(r.talk) > max {
-		r.talk = r.talk[len(r.talk)-max:]
-	}
 }
 
 func colorFor(lv safety.Level) string {

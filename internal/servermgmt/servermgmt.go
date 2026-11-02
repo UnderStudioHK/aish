@@ -15,9 +15,9 @@ import (
 
 // Server knows how to start/stop the local llama-server.
 type Server struct {
-	cfg   *config.Config
-	proc  *exec.Cmd
-	log   *os.File
+	cfg  *config.Config
+	proc *exec.Cmd
+	log  *os.File
 }
 
 func New(cfg *config.Config) *Server { return &Server{cfg: cfg} }

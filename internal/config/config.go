@@ -20,21 +20,22 @@ type Config struct {
 	LLMTimeout time.Duration
 
 	// Safety + presentation
-	Confirm string // "safe-auto" | "always" | "never"
-	Narrate bool   // print the model's explanation after tool runs
+	Confirm  string // "safe-auto" | "always" | "never"
+	Narrate  bool   // print the model's explanation after tool runs
+	FollowUp string // "eager" (background) | "lazy" (Enter to continue) | "off"
 
 	// llama-server
-	LLMHost      string
-	LLMPort      int
-	LLMCtx       int
-	LLMBin       string
-	ModelPath    string
-	KeepAlive    bool
+	LLMHost       string
+	LLMPort       int
+	LLMCtx        int
+	LLMBin        string
+	ModelPath     string
+	KeepAlive     bool
 	ServerLogPath string
 
 	// State
-	PromptFile string
-	StateDir   string
+	PromptFile  string
+	StateDir    string
 	HistoryPath string
 
 	// Base URL for the OpenAI-compatible API
@@ -57,20 +58,21 @@ func home(p string) string {
 
 func Load() (*Config, error) {
 	c := &Config{
-		MaxSteps:      envInt("AISH_MAX_STEPS", 5),
-		HistoryTurns:  envInt("AISH_HISTORY_TURNS", 5),
-		CmdTimeout:    envDur("AISH_CMD_TIMEOUT", 2*time.Hour),
-		LLMTimeout:    envDur("AISH_LLM_TIMEOUT", 2*time.Minute),
-		Confirm:       envStr("AISH_CONFIRM", "safe-auto"),
-		Narrate:       envBool("AISH_NARRATE", false),
-		LLMHost:       envStr("AISH_LLM_HOST", "127.0.0.1"),
-		LLMPort:       envInt("AISH_LLM_PORT", 8081),
-		LLMCtx:        envInt("AISH_LLM_CTX", 32768),
-		LLMBin:        home(envStr("AISH_LLM_BIN", "~/tools/llama-b12034/llama-server")),
-		ModelPath:     home(envStr("AISH_MODEL", "~/models/LFM2.5-24B-A2B-QAD-Q4_0.gguf")),
-		KeepAlive:     envBool("AISH_KEEP_ALIVE", false),
-		PromptFile:    home(envStr("AISH_PROMPT_FILE", "~/.config/aish/prompt.md")),
-		StateDir:      home(envStr("AISH_STATE_DIR", "~/.local/state/aish")),
+		MaxSteps:     envInt("AISH_MAX_STEPS", 5),
+		HistoryTurns: envInt("AISH_HISTORY_TURNS", 5),
+		CmdTimeout:   envDur("AISH_CMD_TIMEOUT", 2*time.Hour),
+		LLMTimeout:   envDur("AISH_LLM_TIMEOUT", 2*time.Minute),
+		Confirm:      envStr("AISH_CONFIRM", "safe-auto"),
+		Narrate:      envBool("AISH_NARRATE", false),
+		FollowUp:     envStr("AISH_FOLLOWUP", "eager"),
+		LLMHost:      envStr("AISH_LLM_HOST", "127.0.0.1"),
+		LLMPort:      envInt("AISH_LLM_PORT", 8081),
+		LLMCtx:       envInt("AISH_LLM_CTX", 32768),
+		LLMBin:       home(envStr("AISH_LLM_BIN", "~/tools/llama-b12034/llama-server")),
+		ModelPath:    home(envStr("AISH_MODEL", "~/models/LFM2.5-24B-A2B-QAD-Q4_0.gguf")),
+		KeepAlive:    envBool("AISH_KEEP_ALIVE", false),
+		PromptFile:   home(envStr("AISH_PROMPT_FILE", "~/.config/aish/prompt.md")),
+		StateDir:     home(envStr("AISH_STATE_DIR", "~/.local/state/aish")),
 	}
 	c.HistoryPath = filepath.Join(c.StateDir, "history")
 	c.ServerLogPath = filepath.Join(c.StateDir, "llama-server.log")
@@ -80,6 +82,11 @@ func Load() (*Config, error) {
 	case "safe-auto", "always", "never":
 	default:
 		return nil, fmt.Errorf("AISH_CONFIRM=%q: want safe-auto|always|never", c.Confirm)
+	}
+	switch c.FollowUp {
+	case "eager", "lazy", "off":
+	default:
+		return nil, fmt.Errorf("AISH_FOLLOWUP=%q: want eager|lazy|off", c.FollowUp)
 	}
 	return c, nil
 }

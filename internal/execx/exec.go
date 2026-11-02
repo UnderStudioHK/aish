@@ -3,8 +3,8 @@
 package execx
 
 import (
-	"fmt"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -200,8 +200,8 @@ func (d *Director) RunTee(ctx context.Context, line string) (string, int, error)
 }
 
 type cappedBuffer struct {
-	sb   strings.Builder
-	used int
+	sb    strings.Builder
+	used  int
 	limit int
 }
 

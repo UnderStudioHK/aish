@@ -20,6 +20,22 @@ ps aux --sort=-%cpu | head -8
 - `!cmd` force native, `!!` repeat last, `??question` ask-only (no commands),
   `cd`/`export` persist across prompts, `Ctrl-C` cancels the running child.
 
+### Multi-turn feel
+
+After a command runs, the prompt returns **immediately** — the model's
+follow-up reasoning happens in the background. If it wants to run another
+command, a dim hint appears above the prompt:
+
+```
+  ↳ follow-up: ls -la /tmp/out   (⏎ run · any input dismisses)
+```
+
+Press **Enter** on the empty prompt to run it (same safety gates apply);
+type anything else and the proposal is dismissed, with the conversation
+kept intact for your next request. `AISH_FOLLOWUP=lazy` instead shows
+`↳ press ⏎ to continue` and only calls the model when you press Enter;
+`off` disables follow-ups entirely.
+
 ## Requirements
 
 - Linux, Go 1.22+ to build
@@ -59,6 +75,7 @@ prompt-dependent.
 | LLM call timeout | `AISH_LLM_TIMEOUT` | `2m` | per model request |
 | Confirm policy | `AISH_CONFIRM` | `safe-auto` | `safe-auto` / `always` / `never` |
 | Narrate results | `AISH_NARRATE` | `0` | print the model's explanation after commands (default: command output speaks for itself) |
+| Follow-up mode | `AISH_FOLLOWUP` | `eager` | `eager` (background) / `lazy` (Enter to continue) / `off` |
 | Server host/port | `AISH_LLM_HOST` / `AISH_LLM_PORT` | `127.0.0.1` / `8081` | llama-server endpoint |
 | Model server ctx | `AISH_LLM_CTX` | `32768` | context length passed to llama-server |
 | Server binary | `AISH_LLM_BIN` | `~/tools/llama-b12034/llama-server` | llama-server executable |

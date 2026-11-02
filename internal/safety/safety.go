@@ -4,20 +4,20 @@ package safety
 import (
 	"bufio"
 	"fmt"
+	"golang.org/x/term"
 	"os"
 	"os/exec"
 	"regexp"
 	"strings"
-	"golang.org/x/term"
 )
 
 // Level of risk per command.
 type Level int
 
 const (
-	Safe Level = iota
-	Confirm      // y/enter-style confirmation
-	Never        // destructive: must type "yes"
+	Safe    Level = iota
+	Confirm       // y/enter-style confirmation
+	Never         // destructive: must type "yes"
 )
 
 // Patterns are conservative on purpose.
