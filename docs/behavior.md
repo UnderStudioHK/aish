@@ -217,6 +217,9 @@ Precedence: flag > env > defaults. Flags: `--max-steps`, `--model`, `--port`,
 - `AISH_DEBUG=1` prints intent/follow-up timings, replay hits and model
   request dumps (`/tmp/opencode/aish_dbg_*.json`).
 - `aish doctor` checks model file, server binary, prompt, endpoint and knobs.
+- `SIGTERM` (and Ctrl-C while idle) shuts down cleanly; the spawned
+  llama-server is tied to aish with `Pdeathsig`, so even a `SIGKILL` of aish
+  cannot leave an orphan model server holding VRAM.
 
 ## 10. Known constraints
 

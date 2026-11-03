@@ -72,6 +72,7 @@ func (s *Server) spawn() (func(), error) {
 		"--port", fmt.Sprint(s.cfg.LLMPort),
 	)
 	cmd.Stdout, cmd.Stderr = logf, logf
+	cmd.SysProcAttr = childAttrs()
 	if err := cmd.Start(); err != nil {
 		logf.Close()
 		return nil, fmt.Errorf("spawn llama-server: %w", err)

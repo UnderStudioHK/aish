@@ -166,12 +166,16 @@ func (r *Repl) Run() (int, error) {
 		return 1, err
 	}
 
-	// Swallow SIGINT/SIGTERM: tty Ctrl-C goes to the whole process group,
-	// which is how running children get interrupted — aish must survive it.
+	// Ctrl-C must not kill aish (the tty delivers it to the child too), but
+	// SIGTERM means "shut down": stop the model server and exit cleanly.
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
-		for range sig {
+		for s := range sig {
+			if s == syscall.SIGTERM {
+				r.srv.Stop()
+				os.Exit(0)
+			}
 		}
 	}()
 
