@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -130,36 +129,6 @@ func (r *Repl) promptString() string {
 	})
 }
 
-func (r *Repl) completer() *readline.PrefixCompleter {
-	items := make([]readline.PrefixCompleterInterface, 0, 128)
-	seen := map[string]bool{}
-	add := func(w string) {
-		if !seen[w] {
-			items = append(items, readline.PcItem(w))
-			seen[w] = true
-		}
-	}
-	add("!")
-	add("??")
-	add("export")
-	for _, b := range []string{"cd", "pwd", "export", "exit", "help", "history", "env"} {
-		add(b)
-	}
-	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			continue
-		}
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-			add(e.Name())
-		}
-	}
-	return readline.NewPrefixCompleter(items...)
-}
-
 // Run is the main loop. Returns the shell exit code.
 func (r *Repl) Run() (int, error) {
 	if err := os.MkdirAll(r.cfg.StateDir, 0o755); err != nil {
@@ -188,7 +157,7 @@ func (r *Repl) Run() (int, error) {
 		Prompt:          r.promptString(),
 		HistoryFile:     r.cfg.HistoryPath,
 		HistoryLimit:    10000,
-		AutoComplete:    r.completer(),
+		AutoComplete:    newShellCompleter(),
 		InterruptPrompt: cYell + "^C" + cNorm,
 	})
 	if err != nil {

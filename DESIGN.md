@@ -139,6 +139,9 @@ client-side and cannot be weakened by the prompt.
 - **Model bake-off** (done): 17-task harness; LFM3-1.7B replaced
   LFM2.5-2.6B (both 94% accuracy, LFM3 ~20% faster, 1.4x decode, 256K
   context, lower hallucination). Harness now declares both tools.
+- **Tab completion** (done): command names at the first word, cwd-relative
+  file/directory paths everywhere else; `~`, quotes, escaped spaces and
+  `--flag=value` supported. Unit-tested and verified through a PTY.
 - **Packaging** (done): portable XDG defaults with legacy fallback,
   `install.sh` (release binary or source build, llama.cpp Vulkan/CPU, model
   download + SHA-256), Makefile, MIT license, CI and release workflows.

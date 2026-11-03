@@ -42,6 +42,7 @@ Filesystem      Size  Used Avail Use% Mounted on
 | **Grounded in your machine** | Live cwd/OS/package-manager context, `dnf`/`flatpak` package lookup before installs, typo hints (`gti` → `git`), and cwd-scoped answers instead of scanning `$HOME`. |
 | **Shell state persists** | `cd` and `export` are applied in-process, so they survive across prompts and agent steps. |
 | **History & replay** | Persistent history; repeating a request re-runs its previous commands with fresh output instead of asking the model again. |
+| **Tab completion** | Commands at the first word; file and directory paths everywhere else, relative to the cwd. Handles spaces, quotes, `~`, and `--flag=value`. |
 | **Useful prompt** | Starship-style line with abbreviated path, git branch/dirty marker, last exit status and pending-follow-up indicator. Custom templates supported. |
 | **Auditable** | Every executed command is appended to `~/.local/state/aish/commands.log` with cwd and exit code. |
 | **Self-checking** | `aish doctor` validates the model, server binary, prompt, endpoint and knobs. |
@@ -126,8 +127,23 @@ find . -type f -newermt today
 | `!make test` | Force native execution (skip the model). |
 | `!!` | Repeat the last command. |
 | `??why is this build failing` | Ask-only: the model may inspect/explain but is told not to change anything. |
+| `Tab` | Complete command names, or file/directory paths relative to the cwd. |
 | `Esc` | Dismiss a queued follow-up, or clear the current line. |
 | `Ctrl-C` | Interrupt the running child process; aish keeps running. |
+
+### Tab completion
+
+**Tab** completes the word at the cursor:
+
+- first word — builtins and executables on `PATH`;
+- every other word — file and directory names in the current directory,
+  including nested paths (`src/ma` → `src/main.go`), absolute paths and `~/…`;
+- directories get a trailing `/`; files get a trailing space;
+- hidden entries appear only when the fragment starts with `.`;
+- quoted names and backslash-escaped spaces are preserved, and
+  `--flag=value` completes the value.
+
+Subcommand, flag and package-name completion are not implemented yet.
 
 ### Follow-ups
 
@@ -253,7 +269,7 @@ install.sh           end-user installer
 
 ## Status
 
-Proof of concept, version `0.1.0`. Working: native fast path, agentic intent
+Proof of concept, version `0.1.1`. Working: native fast path, agentic intent
 path, safety gates, follow-ups, grounding, prompt, installer, CI. Not yet:
 scripting/automation mode, non-Linux support, sandboxing, additional package
 managers, config file.

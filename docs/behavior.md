@@ -38,6 +38,21 @@ those same commands (through the same safety gates) without asking the model
 again. Output is always fresh; latency is zero. The cache is session-scoped
 and bounded; declined commands are never cached.
 
+### Tab completion
+
+Completion is context-aware and runs locally (no model call):
+
+- The **first word** completes builtins and executables found on `PATH`.
+- **Every later word**, and a first word that looks like a path (`.`/`..`,
+  `/`, `~`, or any token containing `/`), completes file and directory names
+  relative to the cwd.
+- Directories are completed with a trailing `/`; files with a trailing space.
+- Hidden entries are offered only when the fragment starts with `.`.
+- `~/…` is expanded for lookup, quoted tokens stay quoted, backslash-escaped
+  spaces are understood, and `--flag=value` completes the value.
+- Completion only applies at the end of the line (readline appends at the
+  cursor, so mid-line completion would insert rather than replace).
+
 ## 2. The model contract
 
 Two tools, both described in the system prompt:
