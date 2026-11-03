@@ -43,6 +43,7 @@ Filesystem      Size  Used Avail Use% Mounted on
 | **Shell state persists** | `cd` and `export` are applied in-process, so they survive across prompts and agent steps. |
 | **History & replay** | Persistent history; repeating a request re-runs its previous commands with fresh output instead of asking the model again. |
 | **Tab completion** | Commands at the first word; file and directory paths everywhere else, relative to the cwd. Handles spaces, quotes, `~`, and `--flag=value`. |
+| **Self-extending Lua skills** | The model can define a temporary Lua tool, use it immediately, and suggest saving it. Skills are namespaced, hot-reloaded, and cannot shadow builtins or `PATH` commands. |
 | **Useful prompt** | Starship-style line with abbreviated path, git branch/dirty marker, last exit status and pending-follow-up indicator. Custom templates supported. |
 | **Auditable** | Every executed command is appended to `~/.local/state/aish/commands.log` with cwd and exit code. |
 | **Self-checking** | `aish doctor` validates the model, server binary, prompt, endpoint and knobs. |
@@ -145,6 +146,37 @@ find . -type f -newermt today
 
 Subcommand, flag and package-name completion are not implemented yet.
 
+### Lua skills (optional)
+
+With `AISH_LUA=1` (the default) the model gets two extra tools:
+
+- `propose_lua` — define a small Lua tool for the current session;
+- `run_lua` — run a registered skill by name with structured arguments.
+
+The model can define a skill and use it immediately, or suggest saving it.
+Only you can persist it:
+
+```console
+~/D/C/aish ❯ :skills
+NAME                 TOOL                       SCOPE    DESCRIPTION
+wordcount            lua_wordcount              session  Count words in a file
+
+~/D/C/aish ❯ :skill save wordcount
+saved wordcount to ~/.config/aish/skills/wordcount.lua
+```
+
+Other commands: `:skill show <name>`, `:skill rm <name>`, `:skill reload`.
+Saved skills live in `~/.config/aish/skills/` and hot-reload when you
+submit a command. Skills are exposed only as `lua_<name>` tools (plus the
+stable `run_lua` tool) — never bare names — so they cannot shadow builtins or
+`PATH` programs.
+
+Lua runs in-process with a deliberately small API: no raw `os`/`io`, only
+`aish.exec` (argv, never a shell string), `aish.print`, `aish.log`,
+`aish.cwd`, `aish.env_get`, `aish.json_encode`, and `aish.json_decode`.
+Every `aish.exec` call goes through the same classifier, confirmation and
+audit log as `run_command`. Set `AISH_LUA=0` to disable the feature.
+
 ### Follow-ups
 
 After a command, the model may want one more step. aish shows it without
@@ -212,6 +244,10 @@ disables the destructive gate.
 scripts, and novel commands can still be harmful. Run aish as a normal user,
 keep backups, and read what it proposes.
 
+Model-authored Lua skills are also code. They run in-process with a narrow API
+and any command they execute is gated, but Lua itself is not a security
+boundary. Persist only skills whose source you have read.
+
 ## Configuration
 
 Precedence: CLI flag > environment > built-in default. (`~/.config/aish/config.toml`
@@ -233,6 +269,11 @@ is planned, not implemented.)
 | Server binary | `AISH_LLM_BIN` | `$XDG_DATA_HOME/aish/llama.cpp/llama-server` | llama-server executable |
 | Model file | `AISH_MODEL` | `$XDG_DATA_HOME/aish/models/LFM3-1.7B-QAD-Q4_0.gguf` | GGUF to serve |
 | Data dir | `AISH_HOME` | `$XDG_DATA_HOME/aish` | base for models + llama.cpp |
+| Lua skills | `AISH_LUA` | `1` | enable model-authored skills (`0` disables) |
+| Skills dir | `AISH_SKILLS_DIR` | `~/.config/aish/skills` | saved `.lua` skills |
+| Lua timeout | `AISH_LUA_TIMEOUT` | `30s` | per-skill call |
+| Session skill limit | `AISH_LUA_MAX_SKILLS` | `8` | max loaded skills |
+| Skill source limit | `AISH_LUA_MAX_BYTES` | `65536` | max bytes per skill |
 | Keep alive | `AISH_KEEP_ALIVE` | `0` | don't stop llama-server on exit |
 | Prompt file | `AISH_PROMPT_FILE` | `~/.config/aish/prompt.md` | persona/system prompt |
 | State dir | `AISH_STATE_DIR` | `$XDG_STATE_HOME/aish` | history + audit log |
@@ -245,6 +286,8 @@ Debug timings and request dumps: `AISH_DEBUG=1` (dumps to
 - [docs/behavior.md](docs/behavior.md) — complete behavior reference:
   routing and replay, tool contract, status lines, follow-ups, safety,
   scope/grounding, prompt, configuration, audit log, troubleshooting.
+- [docs/lua-skills.md](docs/lua-skills.md) — Lua skill design, API and
+  security notes.
 - [DESIGN.md](DESIGN.md) — design rationale, model bake-off, milestones.
 - [scripts/bakeoff.py](scripts/bakeoff.py) — the 17-task model comparison
   harness used to pick the default model.
@@ -262,16 +305,19 @@ internal/servermgmt/ llama-server lifecycle
 internal/pkgfind/    dnf/flatpak package resolution
 internal/config/     env/flag knobs
 internal/history/    history store
+internal/skills/     Lua runtime, validation, registry, hot reload
 third_party/readline patched line editor (Esc timeout)
 scripts/bakeoff.py   model comparison harness
+docs/lua-skills.md   Lua skill design + security notes
 install.sh           end-user installer
 ```
 
 ## Status
 
-Proof of concept, version `0.1.1`. Working: native fast path, agentic intent
-path, safety gates, follow-ups, grounding, prompt, installer, CI. Not yet:
-scripting/automation mode, non-Linux support, sandboxing, additional package
+Proof of concept, version `0.2.0`. Working: native fast path, agentic intent
+path, safety gates, follow-ups, tab completion, model-authored Lua skills,
+grounding, prompt, installer, CI. Not yet: scripting/automation mode,
+non-Linux support, process-isolated skill sandboxing, additional package
 managers, config file.
 
 Issues and experiments are welcome — please include your distro, GPU/CPU,

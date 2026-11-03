@@ -29,3 +29,23 @@ func TestPackageOf(t *testing.T) {
 		}
 	}
 }
+
+func TestDecodeArgs(t *testing.T) {
+	type args struct {
+		Name string `json:"name"`
+	}
+	cases := []string{
+		`{"name":"x"}`,
+		`"{\"name\":\"x\"}"`,
+	}
+	for _, raw := range cases {
+		var a args
+		tc := ToolCall{}
+		tc.Func.Arguments = []byte(raw)
+		if err := DecodeArgs(tc.Func.Arguments, &a); err != nil {
+			t.Errorf("DecodeArgs(%q): %v", raw, err)
+		} else if a.Name != "x" {
+			t.Errorf("DecodeArgs(%q) name = %q", raw, a.Name)
+		}
+	}
+}

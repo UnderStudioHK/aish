@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/chzyer/readline"
+
+	"github.com/UnderStudioHK/aish/internal/skills"
 )
 
 // shellCompleter completes command names at the first word and file/directory
@@ -13,9 +15,10 @@ import (
 // directory unless the token itself is absolute or starts with "~".
 type shellCompleter struct {
 	commands *readline.PrefixCompleter
+	skills   *skills.Manager
 }
 
-func newShellCompleter() *shellCompleter {
+func newShellCompleter(skillMgr *skills.Manager) *shellCompleter {
 	items := make([]readline.PrefixCompleterInterface, 0, 128)
 	seen := map[string]bool{}
 	add := func(w string) {
@@ -26,7 +29,7 @@ func newShellCompleter() *shellCompleter {
 	}
 	add("!")
 	add("??")
-	for _, b := range []string{"cd", "pwd", "export", "exit", "help", "history", "env"} {
+	for _, b := range []string{"cd", "pwd", "export", "exit", "help", "history", "env", ":skills", ":skill"} {
 		add(b)
 	}
 	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
@@ -41,7 +44,10 @@ func newShellCompleter() *shellCompleter {
 			add(e.Name())
 		}
 	}
-	return &shellCompleter{commands: readline.NewPrefixCompleter(items...)}
+	return &shellCompleter{
+		commands: readline.NewPrefixCompleter(items...),
+		skills:   skillMgr,
+	}
 }
 
 // Do implements readline.AutoCompleter.
@@ -54,12 +60,45 @@ func (c *shellCompleter) Do(line []rune, pos int) ([][]rune, int) {
 
 	start := tokenStart(line, pos)
 	token := string(line[start:pos])
-	first := strings.TrimSpace(string(line[:start])) == ""
+	before := strings.Fields(string(line[:start]))
+	first := len(before) == 0
 
 	if first && !looksLikePath(token) {
 		return c.commands.Do(line, pos)
 	}
+	if len(before) > 0 && before[0] == ":skill" {
+		return c.completeSkillCommand(token, before)
+	}
 	return completePathToken(token)
+}
+
+func (c *shellCompleter) completeSkillCommand(token string, before []string) ([][]rune, int) {
+	if len(before) == 1 {
+		return completeWords(token, []string{"show", "save", "rm", "reload", "list"})
+	}
+	switch before[1] {
+	case "show", "save", "rm", "remove":
+		if c.skills == nil {
+			return nil, 0
+		}
+		infos := c.skills.List()
+		names := make([]string, 0, len(infos))
+		for _, in := range infos {
+			names = append(names, in.Name)
+		}
+		return completeWords(token, names)
+	}
+	return nil, 0
+}
+
+func completeWords(token string, words []string) ([][]rune, int) {
+	var out [][]rune
+	for _, w := range words {
+		if strings.HasPrefix(w, token) {
+			out = append(out, []rune(w[len(token):]+" "))
+		}
+	}
+	return out, len([]rune(token))
 }
 
 // tokenStart returns the index where the token containing pos begins. It

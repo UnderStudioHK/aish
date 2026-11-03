@@ -113,6 +113,74 @@ var runCommandTool = map[string]any{
 	},
 }
 
+var proposeLuaTool = map[string]any{
+	"type": "function",
+	"function": map[string]any{
+		"name": "propose_lua",
+		"description": "Define a temporary Lua tool for this session. Use this only " +
+			"when a small reusable helper makes a task more reliable than one-off " +
+			"commands. The code is a Lua function body; it receives one table " +
+			"argument named `args` whose keys match your parameters schema (use " +
+			"args.file, not positional args[1]). Return a string or a table. " +
+			"Example for a word-count tool: parameters = " +
+			`{"type":"object","properties":{"file":{"type":"string"}},"required":["file"]}` +
+			"; code = \"local r = aish.exec({'wc','-w',args.file}); return r.stdout\". " +
+			"Host API: aish.exec({'wc','-w',args.file}) -> {code,stdout,stderr}; " +
+			"the first argv element is the program itself, never 'cmd' or 'sh'. " +
+			"aish.print, aish.log, aish.cwd, aish.env_get, aish.json_encode, " +
+			"aish.json_decode. There is no io/os/require; use aish.exec for file " +
+			"and system access. The tool is registered as lua_<name> for this " +
+			"session and can be called on your next turn. To use it immediately, " +
+			"pass `args` with the exact shape your parameters schema declares; " +
+			"aish runs it and returns the result in this tool message. Never run " +
+			"`aish.exec(...)` through run_command; `aish.exec` exists only inside " +
+			"Lua. The skill is not saved unless the user runs :skill save <name>.",
+		"parameters": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"name":        map[string]any{"type": "string", "description": "lowercase identifier, max 32 chars"},
+				"description": map[string]any{"type": "string", "description": "what the tool does"},
+				"parameters":  map[string]any{"type": "object", "description": "JSON schema for args"},
+				"code":        map[string]any{"type": "string", "description": "Lua function body over args"},
+				"args":        map[string]any{"type": "object", "description": "optional arguments to run immediately after registering"},
+				"persist":     map[string]any{"type": "boolean", "description": "suggest saving after use; user must approve"},
+			},
+			"required": []string{"name", "description", "parameters", "code"},
+		},
+	},
+}
+
+var runLuaTool = map[string]any{
+	"type": "function",
+	"function": map[string]any{
+		"name": "run_lua",
+		"description": "Run a registered Lua skill by name. After propose_lua " +
+			"registers a skill, call this with {\"name\":\"<skill>\",\"args\":{...}}. " +
+			"Use this instead of run_command for skills; aish.exec is a Lua API, " +
+			"not a shell command.",
+		"parameters": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"name": map[string]any{"type": "string", "description": "registered skill name"},
+				"args": map[string]any{"type": "object", "description": "arguments matching the skill schema"},
+			},
+			"required": []string{"name"},
+		},
+	},
+}
+
+// RunLuaTool is the stable entry point for using a registered Lua skill.
+func RunLuaTool() map[string]any { return runLuaTool }
+
+// BaseTools returns the tools that are always available. Callers append
+// session-specific skills and the Lua proposal tool when enabled.
+func BaseTools() []map[string]any {
+	return []map[string]any{runCommandTool, findPackageTool}
+}
+
+// ProposeLuaTool is the meta-tool that lets the model author a session skill.
+func ProposeLuaTool() map[string]any { return proposeLuaTool }
+
 type chatRequest struct {
 	Model         string           `json:"model"`
 	Messages      []Message        `json:"messages"`
@@ -133,10 +201,11 @@ type chatResponse struct {
 	Error   json.RawMessage `json:"error,omitempty"`
 }
 
-// Turn calls the server once. tools=false omits the tool schema (answer
-// in prose only). sysExtra, when non-empty, is appended as a second system
-// message after the static prompt (keeps the cached prompt prefix intact).
-func (c *Client) Turn(ctx context.Context, history []Message, tools bool, sysExtra string) (Message, error) {
+// Turn calls the server once. An empty tools slice omits the tool schema
+// (answer in prose only). sysExtra, when non-empty, is appended as a second
+// system message after the static prompt (keeps the cached prompt prefix
+// intact).
+func (c *Client) Turn(ctx context.Context, history []Message, tools []map[string]any, sysExtra string) (Message, error) {
 	msgs := make([]Message, 0, len(history)+2)
 	msgs = append(msgs, Message{Role: "system", Content: c.Prompt})
 	if sysExtra != "" {
@@ -149,8 +218,8 @@ func (c *Client) Turn(ctx context.Context, history []Message, tools bool, sysExt
 		Messages:    msgs,
 		Temperature: 0.1,
 	}
-	if tools {
-		req.Tools = []map[string]any{runCommandTool, findPackageTool}
+	if len(tools) > 0 {
+		req.Tools = tools
 	}
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -185,6 +254,26 @@ func (c *Client) Turn(ctx context.Context, history []Message, tools bool, sysExt
 		return Message{}, fmt.Errorf("llm: no choices")
 	}
 	return cr.Choices[0].Message, nil
+}
+
+// DecodeArgs decodes tool arguments, tolerating models that return a
+// double-encoded JSON string instead of an object.
+func DecodeArgs(raw json.RawMessage, v any) error {
+	if len(raw) == 0 || string(raw) == "null" {
+		return fmt.Errorf("empty arguments")
+	}
+	if err := json.Unmarshal(raw, v); err == nil {
+		return nil
+	}
+	var encoded string
+	if err := json.Unmarshal(raw, &encoded); err == nil {
+		if err := json.Unmarshal([]byte(encoded), v); err == nil {
+			return nil
+		}
+	}
+	// Last resort: strip backslashes from escaped-but-unquoted JSON.
+	clean := strings.ReplaceAll(string(raw), `\"`, `"`)
+	return json.Unmarshal([]byte(clean), v)
 }
 
 // PackageOf extracts the package name from a find_package tool call,

@@ -22,6 +22,7 @@ import (
 	"github.com/UnderStudioHK/aish/internal/prompt"
 	"github.com/UnderStudioHK/aish/internal/safety"
 	"github.com/UnderStudioHK/aish/internal/servermgmt"
+	"github.com/UnderStudioHK/aish/internal/skills"
 	"golang.org/x/term"
 )
 
@@ -65,6 +66,10 @@ type Repl struct {
 	lastOK     bool     // last batch fully succeeded
 	lastEmpty  bool     // last command produced no output
 
+	// model-authored Lua skills
+	skills       *skills.Manager
+	lastSkillErr string
+
 	// typo assistance cache
 	cmdOnce  sync.Once
 	cmdNames []string
@@ -84,9 +89,14 @@ type Repl struct {
 
 func New(cfg *config.Config, dir *execx.Director, h *history.Store,
 	c *llm.Client, s *servermgmt.Server) *Repl {
-	return &Repl{cfg: cfg, dir: dir, hist: h, llm: c, srv: s,
+	r := &Repl{cfg: cfg, dir: dir, hist: h, llm: c, srv: s,
 		policy: safety.NewPolicy(cfg.Confirm), dict: map[string]bool{},
 		replay: map[string][]string{}}
+	if cfg.LuaEnabled {
+		r.skills = skills.NewManager(cfg.SkillsDir, cfg.LuaTimeout,
+			cfg.LuaMaxSkills, cfg.LuaMaxBytes, r)
+	}
+	return r
 }
 
 // promptString renders the interactive prompt from live state.
@@ -134,6 +144,10 @@ func (r *Repl) Run() (int, error) {
 	if err := os.MkdirAll(r.cfg.StateDir, 0o755); err != nil {
 		return 1, err
 	}
+	if r.skills != nil {
+		r.reloadSkills()
+		defer r.skills.Close()
+	}
 
 	// Ctrl-C must not kill aish (the tty delivers it to the child too), but
 	// SIGTERM means "shut down": stop the model server and exit cleanly.
@@ -157,7 +171,7 @@ func (r *Repl) Run() (int, error) {
 		Prompt:          r.promptString(),
 		HistoryFile:     r.cfg.HistoryPath,
 		HistoryLimit:    10000,
-		AutoComplete:    newShellCompleter(),
+		AutoComplete:    newShellCompleter(r.skills),
 		InterruptPrompt: cYell + "^C" + cNorm,
 	})
 	if err != nil {
@@ -199,6 +213,8 @@ func (r *Repl) Run() (int, error) {
 			return 1, err
 		}
 		line = strings.TrimSpace(line)
+		// Pick up skill edits made while the prompt was sitting idle.
+		r.reloadSkills()
 		if line == "" {
 			// Empty Enter: accept a queued follow-up, else "continue" in lazy mode.
 			if r.hasPending() {
@@ -255,6 +271,9 @@ func (r *Repl) Run() (int, error) {
 
 // dispatch routes one line: native fast path or the model's intent loop.
 func (r *Repl) dispatch(line string) int {
+	if strings.HasPrefix(strings.TrimSpace(line), ":") {
+		return r.dispatchSkillCommand(line)
+	}
 	if fastNative(line) {
 		return r.dir.RunNative(line)
 	}

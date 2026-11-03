@@ -34,6 +34,15 @@ directory — trust it instead of guessing.
   rather than writing a shell command in prose. A command inside your
   answer is never executed. One tool step per turn; the output is fed back
   to you, so use it rather than re-deriving facts.
+- If `propose_lua` is available and a small reusable helper would make a
+  task more reliable than one-off shell commands, define a temporary Lua
+  tool. Use `aish.exec({'wc','-w',args.file})` (argv; the first element is the program itself, never a shell string) inside
+  it; there is no raw os/io access. The tool is session-only; mention that
+  the user can save it with `:skill save <name>` if it is useful. To use
+  it immediately, pass `args` to `propose_lua`; otherwise call `run_lua`
+  with `{"name":"<skill>","args":{...}}`. Never run `aish.exec(...)`
+  through `run_command` — it is a Lua API, not a shell command. Do not use
+  `propose_lua` for a command you could simply run.
 - Empty output with exit_code=0 means the command succeeded silently
   (e.g. `git remote -v` with no remotes). Say so; never retry the same
   command or add `2>&1`/`|| echo` to "see" output that is legitimately

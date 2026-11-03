@@ -88,6 +88,8 @@ func (d *Director) Builtin(line string, h Hooks) (bool, bool) {
 			"  cd, export    builtins; state persists across prompts",
 			"  Enter (empty) run the queued follow-up suggestion",
 			"  Esc           dismiss a queued suggestion / clear the line",
+			"  :skills       list model-authored Lua skills",
+			"  :skill save   save a session skill (show/rm/reload too)",
 			"  help, history this; recent lines",
 			"  exit, Ctrl+D  leave aish",
 			"",
@@ -199,6 +201,61 @@ func (d *Director) RunTee(ctx context.Context, line string) (string, int, error)
 		code = -1
 	}
 	return cap.String(), code, err
+}
+
+// ShellJoin renders argv for display, classification and audit. It never
+// affects execution; RunArgvTee executes argv directly.
+func ShellJoin(argv []string) string {
+	parts := make([]string, len(argv))
+	for i, a := range argv {
+		parts[i] = shellQuote(a)
+	}
+	return strings.Join(parts, " ")
+}
+
+func shellQuote(s string) string {
+	if s == "" {
+		return "''"
+	}
+	safe := true
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '_', r == '-', r == '.', r == '/', r == ':', r == '@', r == '%', r == '+', r == '=':
+		default:
+			safe = false
+		}
+		if !safe {
+			break
+		}
+	}
+	if safe {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// RunArgvTee runs argv directly (no shell) with stdout/stderr streamed to the
+// terminal and simultaneously captured. Used by the Lua aish.exec bridge.
+func (d *Director) RunArgvTee(ctx context.Context, argv []string) (stdout, stderr string, code int, err error) {
+	if len(argv) == 0 {
+		return "", "", -1, fmt.Errorf("empty argv")
+	}
+	outCap := newCappedBuffer(captureLimit)
+	errCap := newCappedBuffer(captureLimit)
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = io.MultiWriter(os.Stdout, outCap)
+	cmd.Stderr = io.MultiWriter(os.Stderr, errCap)
+	err = cmd.Run()
+	d.LastLine = ShellJoin(argv)
+	code = 0
+	if ee, ok := err.(*exec.ExitError); ok {
+		code = ee.ExitCode()
+	} else if err != nil {
+		code = -1
+	}
+	return outCap.String(), errCap.String(), code, err
 }
 
 type cappedBuffer struct {

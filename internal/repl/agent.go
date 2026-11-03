@@ -13,6 +13,7 @@ import (
 
 	"github.com/UnderStudioHK/aish/internal/llm"
 	"github.com/UnderStudioHK/aish/internal/pkgfind"
+	"github.com/UnderStudioHK/aish/internal/skills"
 )
 
 // ---- state helpers (all fields guarded by r.mu) ----
@@ -68,10 +69,18 @@ func (r *Repl) talkCopy() []llm.Message {
 
 // llmTurn is the single-flight model call (one request at a time).
 // extra is optional per-request context appended after the live cwd block.
-func (r *Repl) llmTurn(ctx context.Context, msgs []llm.Message, tools bool, extra string) (llm.Message, error) {
+func (r *Repl) llmTurn(ctx context.Context, msgs []llm.Message, useTools bool, extra string) (llm.Message, error) {
 	sys := r.contextLine()
 	if extra != "" {
 		sys += "\n\n" + extra
+	}
+	var tools []map[string]any
+	if useTools {
+		tools = append(tools, llm.BaseTools()...)
+		if r.skills != nil {
+			tools = append(tools, llm.ProposeLuaTool(), llm.RunLuaTool())
+			tools = append(tools, r.skills.ToolSchemas()...)
+		}
 	}
 	r.llmMu.Lock()
 	defer r.llmMu.Unlock()
@@ -243,6 +252,20 @@ func (r *Repl) executeCalls(calls []llm.ToolCall) bool {
 			r.findPackage(tc)
 			continue
 		}
+		// Model-authored Lua: registration is ephemeral and side-effect free;
+		// the skill runs only via run_lua, lua_<name>, or explicit args.
+		if tc.Func.Name == "propose_lua" {
+			r.proposeLua(tc)
+			continue
+		}
+		if tc.Func.Name == "run_lua" {
+			r.runLua(tc)
+			continue
+		}
+		if strings.HasPrefix(tc.Func.Name, skills.ToolPrefix) {
+			r.callLua(tc)
+			continue
+		}
 		if tc.Func.Name != "" && tc.Func.Name != "run_command" {
 			r.mu.Lock()
 			r.appendTalkLocked(llm.Message{Role: "tool", ToolCallID: tc.ID,
@@ -358,7 +381,7 @@ func (r *Repl) audit(cmd string, code int) {
 func batchCommands(calls []llm.ToolCall) []string {
 	var out []string
 	for _, tc := range calls {
-		if tc.Func.Name == "find_package" {
+		if tc.Func.Name != "" && tc.Func.Name != "run_command" {
 			continue
 		}
 		if cmd, ok := llm.CommandOf(tc); ok {
@@ -602,12 +625,29 @@ func describeCalls(calls []llm.ToolCall) string {
 		return ""
 	}
 	cmd := "?"
-	if calls[0].Func.Name == "find_package" {
+	switch {
+	case calls[0].Func.Name == "find_package":
 		if name, ok := llm.PackageOf(calls[0]); ok {
 			cmd = "find_package " + name
 		}
-	} else if c, ok := llm.CommandOf(calls[0]); ok {
-		cmd = c
+	case calls[0].Func.Name == "propose_lua":
+		var p struct {
+			Name string `json:"name"`
+		}
+		_ = llm.DecodeArgs(calls[0].Func.Arguments, &p)
+		cmd = "propose_lua " + p.Name
+	case calls[0].Func.Name == "run_lua":
+		var p struct {
+			Name string `json:"name"`
+		}
+		_ = llm.DecodeArgs(calls[0].Func.Arguments, &p)
+		cmd = "run_lua " + p.Name
+	case strings.HasPrefix(calls[0].Func.Name, skills.ToolPrefix):
+		cmd = calls[0].Func.Name
+	default:
+		if c, ok := llm.CommandOf(calls[0]); ok {
+			cmd = c
+		}
 	}
 	if len(calls) > 1 {
 		return fmt.Sprintf("%s (+%d more)", cmd, len(calls)-1)

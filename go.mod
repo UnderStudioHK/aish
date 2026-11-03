@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/chzyer/readline v1.5.1
+	github.com/yuin/gopher-lua v1.1.2
 	golang.org/x/term v0.47.0
 )
 

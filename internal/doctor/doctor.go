@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/UnderStudioHK/aish/internal/config"
@@ -63,6 +64,21 @@ func Run(cfg *config.Config) int {
 		report(true, "prompt: %s", cfg.PromptFile)
 	} else {
 		report(true, "prompt: built-in default (no %s)", cfg.PromptFile)
+	}
+
+	// Lua skills
+	if cfg.LuaEnabled {
+		n := 0
+		if entries, err := os.ReadDir(cfg.SkillsDir); err == nil {
+			for _, e := range entries {
+				if !e.IsDir() && strings.HasSuffix(e.Name(), ".lua") {
+					n++
+				}
+			}
+		}
+		report(true, "lua: enabled (%s, %d saved skill(s), timeout %s)", cfg.SkillsDir, n, cfg.LuaTimeout)
+	} else {
+		report(true, "lua: disabled (AISH_LUA=0)")
 	}
 
 	// Endpoint

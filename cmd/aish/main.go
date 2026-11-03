@@ -15,7 +15,7 @@ import (
 	"github.com/UnderStudioHK/aish/internal/servermgmt"
 )
 
-var version = "0.1.1"
+var version = "0.2.0"
 
 func main() {
 	cfg, err := config.Load()

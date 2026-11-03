@@ -161,6 +161,57 @@ prompt as a request.
   `⚠ scope: searches /home/user while cwd is /home/user/Documents/Code`.
 - `? find_package <name>` shows local package resolution in the transcript.
 
+## 6.1 Model-authored Lua skills
+
+`AISH_LUA=1` (default) gives the model two extra tools:
+
+- `propose_lua` registers a temporary Lua tool for the session;
+- `run_lua` runs a registered skill by name with a structured `args` object.
+
+The model can also pass `args` to `propose_lua` to run the skill immediately.
+Skills are exposed as `lua_<name>` tools (and through the stable `run_lua`
+tool), never as bare commands; they cannot shadow builtins or `PATH` programs. `propose_lua` is session-only: it
+does not write to disk. The user persists a skill with `:skill save <name>`.
+
+The skill file format is:
+
+```lua
+return {
+  name = "wordcount",
+  description = "Count words in a file",
+  parameters = {
+    type = "object",
+    properties = { file = { type = "string" } },
+    required = { "file" },
+  },
+  run = function(args)
+    local r = aish.exec({"wc", "-w", args.file})
+    return r.stdout
+  end,
+}
+```
+
+Lua runs in-process with only `base`, `table`, `string`, `math`; `os`, `io`,
+`package`, `debug`, `load*`, `dofile`, `require` and `print` are removed. The
+host API is `aish.exec(argv)`, `aish.print`, `aish.log`, `aish.cwd`,
+`aish.env_get`, `aish.json_encode`, `aish.json_decode`. `aish.exec` takes an
+argv table, streams output, and goes through the same classifier, confirmation
+and audit log as `run_command`.
+
+Management:
+
+```text
+:skills                 list session + saved skills
+:skill show <name>      show metadata and source
+:skill save <name>      save a session skill
+:skill rm <name>        remove a saved skill
+:skill reload           re-read the skills directory
+```
+
+Saved skills live in `~/.config/aish/skills/*.lua` and hot-reload when you
+submit a command. A reload error keeps the previous version and prints a dim message.
+Limits: `AISH_LUA_MAX_SKILLS` (8) and `AISH_LUA_MAX_BYTES` (64 KiB).
+
 ## 7. Prompt display
 
 Default (`AISH_PROMPT_STYLE=full`):
@@ -224,12 +275,18 @@ Precedence: flag > env > defaults. Flags: `--max-steps`, `--model`, `--port`,
 | `AISH_KEEP_ALIVE` | `0` | leave llama-server running on exit |
 | `AISH_HOME` | `$XDG_DATA_HOME/aish` | models + llama.cpp base directory |
 | `AISH_STATE_DIR` | `$XDG_STATE_HOME/aish` | history, logs, audit |
+| `AISH_LUA` | `1` | enable model-authored Lua (`0` disables) |
+| `AISH_SKILLS_DIR` | `~/.config/aish/skills` | saved `.lua` skills |
+| `AISH_LUA_TIMEOUT` | `30s` | per-skill call timeout |
+| `AISH_LUA_MAX_SKILLS` | `8` | max loaded skills |
+| `AISH_LUA_MAX_BYTES` | `65536` | max skill source size |
 
 ## 9. State and troubleshooting
 
 - History: `~/.local/state/aish/history` (owned by readline)
 - llama-server log: `~/.local/state/aish/llama-server.log`
 - Command audit: `~/.local/state/aish/commands.log`
+- Lua skills: `~/.config/aish/skills/*.lua` (hot-reloaded when a command is submitted)
 - `AISH_DEBUG=1` prints intent/follow-up timings, replay hits and model
   request dumps (`$TMPDIR/aish-dbg/aish_dbg_*.json`).
 - `aish doctor` checks model file, server binary, prompt, endpoint and knobs.
@@ -245,3 +302,6 @@ Precedence: flag > env > defaults. Flags: `--max-steps`, `--model`, `--port`,
   background follow-up), so llama-server never sees concurrent slots.
 - Agent-proposed commands are executed via `/bin/sh`, not zsh; shell syntax
   is POSIX, not zsh-specific.
+- Lua skills are not a security boundary. They run in-process with a narrow
+  API and gated `aish.exec`, but a malicious skill can still burn CPU until
+  the timeout or consume memory. Read a skill before saving it.
