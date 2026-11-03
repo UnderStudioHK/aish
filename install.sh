@@ -116,11 +116,11 @@ case "$(uname -s)" in
   Linux) ;;
   *) warn "aish is developed and tested on Linux; continuing anyway" ;;
 esac
-ARCH=$(uname -m)
-case "$ARCH" in
-  x86_64|amd64) ARCH=amd64 ;;
-  aarch64|arm64) ARCH=arm64 ;;
-  *) die "unsupported architecture: $ARCH" ;;
+MACHINE=$(uname -m)
+case "$MACHINE" in
+  x86_64|amd64) AISH_ARCH=amd64; LLAMA_ARCH=x64 ;;
+  aarch64|arm64) AISH_ARCH=arm64; LLAMA_ARCH=arm64 ;;
+  *) die "unsupported architecture: $MACHINE" ;;
 esac
 
 installed_ok=0
@@ -135,9 +135,9 @@ if [ "$installed_ok" -eq 0 ]; then
     FROM_SOURCE=1
     say "building from local source at $SRC"
   elif [ "$FROM_SOURCE" -eq 0 ]; then
-    say "downloading the latest aish release binary ($ARCH)"
+    say "downloading the latest aish release binary ($AISH_ARCH)"
     if curl -fL --retry 3 --connect-timeout 20 \
-        "$REPO_URL/releases/latest/download/aish-linux-$ARCH" -o "$BIN_TMP" 2>/dev/null; then
+        "$REPO_URL/releases/latest/download/aish-linux-$AISH_ARCH" -o "$BIN_TMP" 2>/dev/null; then
       chmod +x "$BIN_TMP"
       if "$BIN_TMP" --version >/dev/null 2>&1; then
         say "downloaded release binary"
@@ -184,12 +184,12 @@ else
     fi
   fi
   if [ "$BACKEND" = vulkan ]; then
-    ASSET="llama-${LLAMA_TAG}-bin-ubuntu-vulkan-${ARCH}.tar.gz"
+    ASSET="llama-${LLAMA_TAG}-bin-ubuntu-vulkan-${LLAMA_ARCH}.tar.gz"
   else
-    ASSET="llama-${LLAMA_TAG}-bin-ubuntu-${ARCH}.tar.gz"
+    ASSET="llama-${LLAMA_TAG}-bin-ubuntu-${LLAMA_ARCH}.tar.gz"
   fi
   [ -n "$TMP" ] || TMP=$(mktemp -d "${TMPDIR:-/tmp}/aish-install.XXXXXX")
-  say "downloading llama.cpp $LLAMA_TAG ($BACKEND, $ARCH)"
+  say "downloading llama.cpp $LLAMA_TAG ($BACKEND, $LLAMA_ARCH)"
   curl -fL --retry 3 --connect-timeout 20 \
     "https://github.com/${LLAMA_REPO}/releases/download/${LLAMA_TAG}/${ASSET}" -o "$TMP/llama.tar.gz" \
     || die "could not download $ASSET"
