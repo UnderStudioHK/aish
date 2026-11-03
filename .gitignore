@@ -1,5 +1,5 @@
-bin/
-aish
+/bin/
+/aish
 dist/
 *.part
 *.log
