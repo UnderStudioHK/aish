@@ -205,7 +205,7 @@ Precedence: flag > env > defaults. Flags: `--max-steps`, `--model`, `--port`,
 | `AISH_LLM_HOST` / `AISH_LLM_PORT` | `127.0.0.1` / `8081` | llama-server |
 | `AISH_LLM_CTX` | `32768` | llama-server context |
 | `AISH_LLM_BIN` | `~/tools/llama-b12034/llama-server` | server binary |
-| `AISH_MODEL` | `~/models/LFM2.5-2.6B-Q4_0.gguf` | GGUF |
+| `AISH_MODEL` | `~/models/LFM3-1.7B-QAD-Q4_0.gguf` | GGUF |
 | `AISH_KEEP_ALIVE` | `0` | leave llama-server running on exit |
 | `AISH_STATE_DIR` | `~/.local/state/aish` | history, logs, audit |
 

@@ -30,8 +30,10 @@ Fedora Linux 44, AMD Ryzen AI 9 HX 370 with Radeon 890M GPU, user
   applies them in-process), so directory changes carry into later steps.
   Emit `cd <dir>` alone — never chain it with `&&`; a compound command
   runs in a subshell and the directory change is lost.
-- One `run_command` step per turn. The output is fed back to you each
-  turn; use it rather than re-deriving facts.
+- Always act through the tools: call `run_command` (or `find_package`)
+  rather than writing a shell command in prose. A command inside your
+  answer is never executed. One tool step per turn; the output is fed back
+  to you, so use it rather than re-deriving facts.
 - Empty output with exit_code=0 means the command succeeded silently
   (e.g. `git remote -v` with no remotes). Say so; never retry the same
   command or add `2>&1`/`|| echo` to "see" output that is legitimately

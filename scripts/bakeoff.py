@@ -28,6 +28,19 @@ TOOLS = [{
             "required": ["command"],
         },
     },
+}, {
+    "type": "function",
+    "function": {
+        "name": "find_package",
+        "description": "Look up which local package ecosystem provides a piece of "
+                       "software (checks dnf and flatpak). Call this BEFORE any install "
+                       "command.",
+        "parameters": {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+        },
+    },
 }]
 
 # name, prompt, regex the proposed command must match
@@ -49,8 +62,11 @@ SCENARIOS = [
     ("python version",      "which python version is installed", r"python3?(\.\d+)?\s+(-V|--version)"),
     ("process by name",     "is sshd running right now", r"\b(pgrep|ps|systemctl|pidof)\b"),
     # scope: unqualified search must stay in the cwd (never $HOME / ~ / /home)
+    # scope: unqualified search must stay in the cwd; an absolute cwd path is
+    # fine, scanning the home root or ~ is not.
     ("scope: count here",   "how many zentasks folders are there?",
-     r"^(?!.*(/home|\$HOME|~))(?!.*find\s+/)(?=.*\b(find|ls|du|fd)\b).*"),
+     r"^(?!.*(\$HOME|~|/home/lvturner/?\s|find\s+/\s))(?!.*find\s+/$)"
+     r"(?=.*\b(find|ls|du|fd)\b).*"),
 ]
 
 
@@ -92,7 +108,10 @@ def ask(base, prompt, sys_prompt, ctx, timeout):
         args = calls[0]["function"].get("arguments", "")
         try:
             obj = json.loads(args)
-            cmd = obj.get("command", "") or obj.get("name", "")
+            if tool == "find_package":
+                cmd = f"find_package({obj.get('name', '?')})"
+            else:
+                cmd = obj.get("command", "") or obj.get("name", "")
         except Exception:
             cmd = args
     return tool, cmd, msg.get("content") or "", wall, data["choices"][0].get("finish_reason")
@@ -126,6 +145,8 @@ def main():
                 tool, cmd, content, wall, finish = "", "", f"ERROR {e}", 0, "error"
             # a find_package lookup is the correct first step for installs
             hit = bool(re.search(pattern, cmd, re.I)) or (tool == "find_package" and "install" in prompt)
+            if tool == "find_package":
+                cmd = cmd  # already rendered
             ok += hit
             walls.append(wall)
             cmds.append(cmd or f"(no command) {content[:70]!r}")

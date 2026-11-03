@@ -73,7 +73,7 @@ func Load() (*Config, error) {
 		LLMPort:      envInt("AISH_LLM_PORT", 8081),
 		LLMCtx:       envInt("AISH_LLM_CTX", 32768),
 		LLMBin:       home(envStr("AISH_LLM_BIN", "~/tools/llama-b12034/llama-server")),
-		ModelPath:    home(envStr("AISH_MODEL", "~/models/LFM2.5-2.6B-Q4_0.gguf")),
+		ModelPath:    home(envStr("AISH_MODEL", "~/models/LFM3-1.7B-QAD-Q4_0.gguf")),
 		KeepAlive:    envBool("AISH_KEEP_ALIVE", false),
 		PromptFile:   home(envStr("AISH_PROMPT_FILE", "~/.config/aish/prompt.md")),
 		PromptStyle:  envStr("AISH_PROMPT_STYLE", "full"),
