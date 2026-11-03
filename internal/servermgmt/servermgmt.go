@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"aish/internal/config"
-	"aish/internal/llm"
+	"github.com/UnderStudioHK/aish/internal/config"
+	"github.com/UnderStudioHK/aish/internal/llm"
 )
 
 // Server knows how to start/stop the local llama-server.

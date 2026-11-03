@@ -1,6 +1,6 @@
-module aish
+module github.com/UnderStudioHK/aish
 
-go 1.26.8
+go 1.26.0
 
 require (
 	github.com/chzyer/readline v1.5.1

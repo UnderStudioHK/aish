@@ -1,18 +1,17 @@
-# aish — plan
+# aish — design notes
 
 An AI-driven shell REPL in Go that replaces zsh/bash *from the user-facing side*
 (not for script running). Intent parsing for natural-language lines is done by
-LiquidAI **LFM3-1.7B** (bake-off winner) served locally via llama.cpp on the
-Radeon 890M iGPU.
+LiquidAI **LFM3-1.7B** (bake-off winner) served locally via llama.cpp, with
+optional Vulkan GPU offload.
 
-## Machine context
+## Reference setup
 
-- Fedora 44, AMD Ryzen AI 9 HX 370 (24 threads), Radeon 890M iGPU, 23 GB unified RAM
-- LLM backend: llama.cpp b12034 (prebuilt Vulkan release) at `~/tools/llama-b12034/`
-- Model: `LiquidAI/LFM3-1.7B-GGUF — QAD-Q4_0` (1.05 GB) at `~/models/`
-  (94%, ~2.1 s/turn, 256K context, ~1.4x faster decode than 2.6B).
-  LFM2.5-2.6B kept on disk as fallback; 8B-A1B too slow (thinking model);
-  24B download cancelled, partial kept resumable.
+- Linux, AMD Ryzen AI 9 HX 370 (24 threads, Radeon 890M iGPU, 23 GB
+  unified RAM) — the machine the bake-off numbers were measured on
+- LLM backend: llama.cpp b12034 (prebuilt Vulkan release)
+- Model: `LiquidAI/LFM3-1.7B-GGUF — QAD-Q4_0` (~1.05 GB), 94% on the
+  shell suite, ~2.1 s/turn, 256K context, ~1.4x faster decode than 2.6B
 - Serving API: OpenAI-compatible at `127.0.0.1:8081`
 
 ## Architecture
@@ -21,10 +20,11 @@ Two-speed REPL — critical for shell feel with a local model:
 
 - **Fast path**: line starts with a PATH executable, aish builtin, or plain shell
   syntax → execute natively via `sh -c`, zero model latency.
-- **Intent path**: otherwise send to the LLM exposing one OpenAI tool
-  `run_command(command: string)`; llama-server (`--jinja`) parses LFM2.5's native
-  Pythonic tool-call format so Go receives structured `{name, arguments}`.
-  Exit codes are fed back for self-correction (bounded loop).
+- **Intent path**: otherwise send to the LLM exposing two OpenAI tools,
+  `run_command(command)` and `find_package(name)`; llama-server (`--jinja`)
+  parses LFM3's native tool-call format so Go receives structured
+  `{name, arguments}`. Output and exit codes are fed back for
+  self-correction (bounded loop).
 
 State & builtins (intercepted in-process so state persists across prompts):
 `cd`, `export`, plus `exit`, `history`, `help`, `!` force-native prefix,
@@ -40,20 +40,25 @@ a custom system prompt cannot weaken it. `AISH_CONFIRM=never` overrides.
 
 ```
 aish/
-  PLAN.md
-  go.mod                       module aish
-  cmd/aish/main.go             wiring, flags
-  internal/repl/               reedline loop, prompt, routing
-  internal/exec/               dispatch, builtins, state (cwd/env), exit codes
-  internal/llm/                net/http client, tool schema, prompt assembly
-  internal/llm/default-prompt.md   embedded cool default system prompt
+  DESIGN.md
+  install.sh                   end-user installer (binary/llama.cpp/model)
+  go.mod                       module github.com/UnderStudioHK/aish
+  cmd/aish/main.go             wiring, flags, doctor dispatch
+  internal/repl/               REPL loop, agent turn/follow-up, routing, typo aid
+  internal/prompt/             prompt rendering + cached git detection
+  internal/execx/              dispatch, builtins, state (cwd/env), exit codes
+  internal/llm/                net/http client, tool schemas, prompt assembly
+  internal/llm/default-prompt.md   embedded default system prompt
   internal/safety/             classifier + confirmation UI
   internal/servermgmt/         llama-server health check, spawn, stop
-  internal/history/            persistent history (~/.local/state/aish/)
+  internal/pkgfind/            dnf/flatpak package resolution
+  internal/history/            persistent history
   internal/config/             all knobs (below), prompt file loader
+  third_party/readline/        vendored line editor with ESC-timeout patch
 ```
 
-Dependencies kept minimal: `muesli/reedline` (+ `x/term`), no LLM SDK, no heavy TUI.
+Dependencies kept minimal: `chzyer/readline` (vendored) + `x/term`, no LLM
+SDK, no heavy TUI.
 
 ## Configuration
 
@@ -70,35 +75,25 @@ Precedence: **flag > env > `~/.config/aish/config.toml` (optional) > default**.
 | Follow-up mode | `AISH_FOLLOWUP` | `eager` | background follow-up / Enter-to-continue / off |
 | Server port | `AISH_LLM_PORT` | `8081` | also `AISH_LLM_HOST`, `AISH_LLM_CTX` |
 | Server lifecycle | `AISH_KEEP_ALIVE` | `0` | `1` = leave llama-server running on exit |
+| Server binary | `AISH_LLM_BIN` | `$XDG_DATA_HOME/aish/llama.cpp/llama-server` | legacy `~/tools/...` detected |
+| Model file | `AISH_MODEL` | `$XDG_DATA_HOME/aish/models/LFM3-1.7B-QAD-Q4_0.gguf` | legacy `~/models/...` detected |
+| Data dir | `AISH_HOME` | `$XDG_DATA_HOME/aish` | models + llama.cpp |
+| State dir | `AISH_STATE_DIR` | `$XDG_STATE_HOME/aish` | history + audit log |
 | System prompt | `AISH_PROMPT_FILE` | `~/.config/aish/prompt.md` | missing → embedded default |
 
 The system prompt is byte-identical across calls (KV prefix cache hits). Only the
 persona/rules section is user-replaceable; tool/safety contract is enforced
 client-side.
 
-### Default system prompt (sketch, tuned against real M0 latency before bake-in)
+### Default system prompt
 
-```markdown
-# aish
-You are aish, a shell copilot running on this machine: Fedora 44,
-AMD Ryzen AI 9 HX 370 (Radeon 890M), user `lvturner`, zsh is the fallback executor.
-
-## Style
-- Terse. Reply like a shell, not a chatbot: no code fences, no "sure!",
-  no restating the request.
-- One `run_command` step per turn; assume output is fed back to you.
-- Run boring commands (`ls`, `grep`) silently; explain only on failure
-  or surprising output — one or two sentences, then done.
-
-## Execution
-- Prefer one composed, explicit command: pipes, `xargs`, `find -exec`, `git -C`.
-- Machine tooling: `podman`, `dnf`, `python3.14`.
-- Destructive ops must first emit a one-line consequence statement,
-  e.g. `waptop: removes the 3 untracked files`.
-- Ambiguous request → pick the common interpretation and act; ask only
-  when the wrong choice loses data.
-- Never invent files/paths — verify with a command first when unsure.
-```
+The built-in prompt lives in
+[`internal/llm/default-prompt.md`](internal/llm/default-prompt.md) and is
+compiled into the binary. It covers terse shell-style answers, cwd-scoped
+grounding, package lookup before installs, `cd`/`export` persistence, tool-only
+actions, silent-success handling, and destructive-operation warnings. It is
+user-replaceable via `AISH_PROMPT_FILE`; the tool/safety contract is enforced
+client-side and cannot be weakened by the prompt.
 
 ## Milestones
 
@@ -109,7 +104,7 @@ AMD Ryzen AI 9 HX 370 (Radeon 890M), user `lvturner`, zsh is the fallback execut
   - [x] llama.cpp Vulkan build installed (`~/tools/llama-b12034`, 890M detected, 20 GB VRAM)
   - [x] tool-call path verified end-to-end (`finish_reason: tool_calls`, structured args)
   - [x] intent loop validated on LFM2.5-2.6B + 230M proxies (correct kernel/disk answers from real tool output, ~5 s/turn)
-  - [ ] 24B QAD-Q4_0 GGUF on disk + SHA-256 verified + tok/s measured (downloading, ~2 h ETA)
+  - [x] 24B trial cancelled: too slow for a shell; partial download removed
 - **M1 — native skeleton** (done): reedline→chzyer/readline REPL, router (PATH/builtin),
   `sh -c` dispatch with streams attached, `cd`/`export` builtins, exit-code display,
   persistent history, config package.
@@ -141,6 +136,13 @@ AMD Ryzen AI 9 HX 370 (Radeon 890M), user `lvturner`, zsh is the fallback execut
   follow-up with queued proposals, prompt-safe inline hints (readline
   Refresh), Enter-to-accept, cancel/dismiss on new input, epoch-guarded
   state, `AISH_FOLLOWUP=eager|lazy|off`, race-tested under `-race`.
+- **Model bake-off** (done): 17-task harness; LFM3-1.7B replaced
+  LFM2.5-2.6B (both 94% accuracy, LFM3 ~20% faster, 1.4x decode, 256K
+  context, lower hallucination). Harness now declares both tools.
+- **Packaging** (done): portable XDG defaults with legacy fallback,
+  `install.sh` (release binary or source build, llama.cpp Vulkan/CPU, model
+  download + SHA-256), Makefile, MIT license, CI and release workflows.
 - **M4 — polish** (partial): CLI flags (`--max-steps`, `--model`, `--port`,
   `--ctx`, `--confirm`, `--version`), `aish doctor` done; remaining:
-  configurable never-auto pattern list, optional systemd user unit, README final pass.
+  configurable never-auto pattern list, optional systemd user unit,
+  non-Linux support.

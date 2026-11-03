@@ -16,13 +16,13 @@ import (
 
 	"github.com/chzyer/readline"
 
-	"aish/internal/config"
-	"aish/internal/execx"
-	"aish/internal/history"
-	"aish/internal/llm"
-	"aish/internal/prompt"
-	"aish/internal/safety"
-	"aish/internal/servermgmt"
+	"github.com/UnderStudioHK/aish/internal/config"
+	"github.com/UnderStudioHK/aish/internal/execx"
+	"github.com/UnderStudioHK/aish/internal/history"
+	"github.com/UnderStudioHK/aish/internal/llm"
+	"github.com/UnderStudioHK/aish/internal/prompt"
+	"github.com/UnderStudioHK/aish/internal/safety"
+	"github.com/UnderStudioHK/aish/internal/servermgmt"
 	"golang.org/x/term"
 )
 

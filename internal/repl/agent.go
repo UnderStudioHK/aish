@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"aish/internal/llm"
-	"aish/internal/pkgfind"
+	"github.com/UnderStudioHK/aish/internal/llm"
+	"github.com/UnderStudioHK/aish/internal/pkgfind"
 )
 
 // ---- state helpers (all fields guarded by r.mu) ----
@@ -636,5 +636,9 @@ func debugDump(stage string, msgs []llm.Message) {
 		return
 	}
 	b, _ := json.MarshalIndent(msgs, "", " ")
-	_ = os.WriteFile("/tmp/opencode/aish_dbg_"+stage+".json", b, 0o644)
+	dir := filepath.Join(os.TempDir(), "aish-dbg")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return
+	}
+	_ = os.WriteFile(filepath.Join(dir, "aish_dbg_"+stage+".json"), b, 0o600)
 }

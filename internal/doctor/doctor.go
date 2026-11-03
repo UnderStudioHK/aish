@@ -8,8 +8,8 @@ import (
 	"os/exec"
 	"time"
 
-	"aish/internal/config"
-	"aish/internal/llm"
+	"github.com/UnderStudioHK/aish/internal/config"
+	"github.com/UnderStudioHK/aish/internal/llm"
 )
 
 func Run(cfg *config.Config) int {

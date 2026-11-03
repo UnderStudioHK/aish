@@ -46,6 +46,45 @@ type Config struct {
 	HubURL string
 }
 
+// dataHome is where models/llama.cpp live: AISH_HOME, else XDG_DATA_HOME/aish.
+func dataHome() string {
+	if v := os.Getenv("AISH_HOME"); v != "" {
+		return home(v)
+	}
+	if v := os.Getenv("XDG_DATA_HOME"); v != "" {
+		return filepath.Join(v, "aish")
+	}
+	return home(filepath.Join("~", ".local", "share", "aish"))
+}
+
+func stateHome() string {
+	if v := os.Getenv("XDG_STATE_HOME"); v != "" {
+		return v
+	}
+	return home(filepath.Join("~", ".local", "state"))
+}
+
+func dataPath(parts ...string) string {
+	return filepath.Join(append([]string{dataHome()}, parts...)...)
+}
+
+// envPath returns the env override if set, else the first existing legacy
+// path among candidates, else the primary default.
+func envPath(key, primary string, legacy ...string) string {
+	if v, ok := os.LookupEnv(key); ok && v != "" {
+		return home(v)
+	}
+	if _, err := os.Stat(primary); err == nil {
+		return primary
+	}
+	for _, p := range legacy {
+		if _, err := os.Stat(home(p)); err == nil {
+			return home(p)
+		}
+	}
+	return primary
+}
+
 func home(p string) string {
 	if p == "" {
 		return ""
@@ -72,13 +111,13 @@ func Load() (*Config, error) {
 		LLMHost:      envStr("AISH_LLM_HOST", "127.0.0.1"),
 		LLMPort:      envInt("AISH_LLM_PORT", 8081),
 		LLMCtx:       envInt("AISH_LLM_CTX", 32768),
-		LLMBin:       home(envStr("AISH_LLM_BIN", "~/tools/llama-b12034/llama-server")),
-		ModelPath:    home(envStr("AISH_MODEL", "~/models/LFM3-1.7B-QAD-Q4_0.gguf")),
+		LLMBin:       envPath("AISH_LLM_BIN", dataPath("llama.cpp", "llama-server"), "~/tools/llama-b12034/llama-server"),
+		ModelPath:    envPath("AISH_MODEL", dataPath("models", "LFM3-1.7B-QAD-Q4_0.gguf"), "~/models/LFM3-1.7B-QAD-Q4_0.gguf", "~/models/LFM2.5-2.6B-Q4_0.gguf"),
 		KeepAlive:    envBool("AISH_KEEP_ALIVE", false),
 		PromptFile:   home(envStr("AISH_PROMPT_FILE", "~/.config/aish/prompt.md")),
 		PromptStyle:  envStr("AISH_PROMPT_STYLE", "full"),
 		PromptTmpl:   home(envStr("AISH_PROMPT_TMPL", "~/.config/aish/prompt.tmpl")),
-		StateDir:     home(envStr("AISH_STATE_DIR", "~/.local/state/aish")),
+		StateDir:     home(envStr("AISH_STATE_DIR", filepath.Join(stateHome(), "aish"))),
 	}
 	c.HistoryPath = filepath.Join(c.StateDir, "history")
 	c.ServerLogPath = filepath.Join(c.StateDir, "llama-server.log")

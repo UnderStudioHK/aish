@@ -65,7 +65,7 @@ SCENARIOS = [
     # scope: unqualified search must stay in the cwd; an absolute cwd path is
     # fine, scanning the home root or ~ is not.
     ("scope: count here",   "how many zentasks folders are there?",
-     r"^(?!.*(\$HOME|~|/home/lvturner/?\s|find\s+/\s))(?!.*find\s+/$)"
+     r"^(?!.*(\$HOME|~|find\s+/\s))(?!.*find\s+/$)"
      r"(?=.*\b(find|ls|du|fd)\b).*"),
 ]
 

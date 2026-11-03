@@ -1,7 +1,7 @@
 # aish behavior reference
 
 Every user-visible behavior in one place. Code lives in `internal/`; the
-design rationale and milestones are in `PLAN.md`.
+design rationale and milestones are in `DESIGN.md`.
 
 ## 1. Routing: shell first, model second
 
@@ -204,10 +204,11 @@ Precedence: flag > env > defaults. Flags: `--max-steps`, `--model`, `--port`,
 | `AISH_PROMPT_FILE` | `~/.config/aish/prompt.md` | system prompt override |
 | `AISH_LLM_HOST` / `AISH_LLM_PORT` | `127.0.0.1` / `8081` | llama-server |
 | `AISH_LLM_CTX` | `32768` | llama-server context |
-| `AISH_LLM_BIN` | `~/tools/llama-b12034/llama-server` | server binary |
-| `AISH_MODEL` | `~/models/LFM3-1.7B-QAD-Q4_0.gguf` | GGUF |
+| `AISH_LLM_BIN` | `$XDG_DATA_HOME/aish/llama.cpp/llama-server` | server binary (legacy `~/tools/...` auto-detected) |
+| `AISH_MODEL` | `$XDG_DATA_HOME/aish/models/LFM3-1.7B-QAD-Q4_0.gguf` | GGUF (legacy `~/models/...` auto-detected) |
 | `AISH_KEEP_ALIVE` | `0` | leave llama-server running on exit |
-| `AISH_STATE_DIR` | `~/.local/state/aish` | history, logs, audit |
+| `AISH_HOME` | `$XDG_DATA_HOME/aish` | models + llama.cpp base directory |
+| `AISH_STATE_DIR` | `$XDG_STATE_HOME/aish` | history, logs, audit |
 
 ## 9. State and troubleshooting
 
@@ -215,7 +216,7 @@ Precedence: flag > env > defaults. Flags: `--max-steps`, `--model`, `--port`,
 - llama-server log: `~/.local/state/aish/llama-server.log`
 - Command audit: `~/.local/state/aish/commands.log`
 - `AISH_DEBUG=1` prints intent/follow-up timings, replay hits and model
-  request dumps (`/tmp/opencode/aish_dbg_*.json`).
+  request dumps (`$TMPDIR/aish-dbg/aish_dbg_*.json`).
 - `aish doctor` checks model file, server binary, prompt, endpoint and knobs.
 - `SIGTERM` (and Ctrl-C while idle) shuts down cleanly; the spawned
   llama-server is tied to aish with `Pdeathsig`, so even a `SIGKILL` of aish

@@ -8,7 +8,7 @@ import (
 func TestFastNative(t *testing.T) {
 	cases := map[string]bool{
 		"ls":                     true,
-		"ls -la /home/lvturner":  true,
+		"ls -la /home/user":      true,
 		"git status":             true,
 		"git -C /tmp status":     true, // -C tail
 		"cat /etc/os-release":    true, // path tail
