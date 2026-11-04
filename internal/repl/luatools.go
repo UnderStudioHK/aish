@@ -8,14 +8,14 @@ import (
 
 	"github.com/UnderStudioHK/aish/internal/execx"
 	"github.com/UnderStudioHK/aish/internal/llm"
-	"github.com/UnderStudioHK/aish/internal/skills"
+	"github.com/UnderStudioHK/aish/internal/luatools"
 )
 
-// ---- Lua skills: model tool bridge ----
+// ---- Lua tools: model tool bridge ----
 
 func (r *Repl) proposeLua(tc llm.ToolCall) {
-	if r.skills == nil {
-		r.appendToolError(tc, "Lua skills are disabled (AISH_LUA=0)")
+	if r.luaTools == nil {
+		r.appendToolError(tc, "Lua tools are disabled (AISH_LUA=0)")
 		return
 	}
 	var args struct {
@@ -30,17 +30,17 @@ func (r *Repl) proposeLua(tc llm.ToolCall) {
 		r.appendToolError(tc, "unreadable propose_lua arguments: "+err.Error())
 		return
 	}
-	info, err := r.skills.Propose(args.Name, args.Description, args.Code, args.Parameters)
+	info, err := r.luaTools.Propose(args.Name, args.Description, args.Code, args.Parameters)
 	if err != nil {
-		r.appendToolError(tc, "could not register Lua skill: "+err.Error())
+		r.appendToolError(tc, "could not register Lua tool: "+err.Error())
 		return
 	}
 
-	fmt.Printf("%s⚙ lua skill %s registered (session)%s\n", cDim, info.Name, cNorm)
-	msg := fmt.Sprintf("registered Lua skill %s for this session; use run_lua with {\"name\":%q,\"args\":{...}}.", info.Name, info.Name)
+	fmt.Printf("%s⚙ lua tool %s registered (session)%s\n", cDim, info.Name, cNorm)
+	msg := fmt.Sprintf("registered Lua tool %s for this session; use run_lua with {\"name\":%q,\"args\":{...}}.", info.Name, info.Name)
 	if len(args.Args) > 0 {
 		ctx, cancel := context.WithTimeout(context.Background(), r.cfg.LuaTimeout)
-		out, err := r.skills.Call(ctx, info.Tool, args.Args)
+		out, err := r.luaTools.Call(ctx, info.Tool, args.Args)
 		cancel()
 		if err != nil {
 			msg += "\nimmediate run failed: " + err.Error()
@@ -52,8 +52,8 @@ func (r *Repl) proposeLua(tc llm.ToolCall) {
 		}
 	}
 	if args.Persist {
-		msg += fmt.Sprintf(" The user can persist it with `:skill save %s`.", info.Name)
-		fmt.Printf("%s  save with :skill save %s%s\n", cDim, info.Name, cNorm)
+		msg += fmt.Sprintf(" The user can persist it with `:lua save %s`.", info.Name)
+		fmt.Printf("%s  save with :lua save %s%s\n", cDim, info.Name, cNorm)
 	}
 	r.mu.Lock()
 	r.appendTalkLocked(llm.Message{Role: "tool", ToolCallID: tc.ID, Content: msg})
@@ -61,8 +61,8 @@ func (r *Repl) proposeLua(tc llm.ToolCall) {
 }
 
 func (r *Repl) runLua(tc llm.ToolCall) {
-	if r.skills == nil {
-		r.appendToolError(tc, "Lua skills are disabled (AISH_LUA=0)")
+	if r.luaTools == nil {
+		r.appendToolError(tc, "Lua tools are disabled (AISH_LUA=0)")
 		return
 	}
 	var args struct {
@@ -74,18 +74,18 @@ func (r *Repl) runLua(tc llm.ToolCall) {
 		return
 	}
 	if args.Name == "" {
-		r.appendToolError(tc, "run_lua requires a skill name")
+		r.appendToolError(tc, "run_lua requires a Lua tool name")
 		return
 	}
 	tool := args.Name
-	if !strings.HasPrefix(tool, skills.ToolPrefix) {
-		tool = skills.ToolPrefix + tool
+	if !strings.HasPrefix(tool, luatools.ToolPrefix) {
+		tool = luatools.ToolPrefix + tool
 	}
 	fmt.Printf("%s⚙ run_lua %s%s\n", cDim, args.Name, cNorm)
 
 	ctx, cancel := context.WithTimeout(context.Background(), r.cfg.LuaTimeout)
 	defer cancel()
-	out, err := r.skills.Call(ctx, tool, args.Args)
+	out, err := r.luaTools.Call(ctx, tool, args.Args)
 	if err != nil {
 		out = "error: " + err.Error()
 	}
@@ -98,8 +98,8 @@ func (r *Repl) runLua(tc llm.ToolCall) {
 }
 
 func (r *Repl) callLua(tc llm.ToolCall) {
-	if r.skills == nil {
-		r.appendToolError(tc, "Lua skills are disabled (AISH_LUA=0)")
+	if r.luaTools == nil {
+		r.appendToolError(tc, "Lua tools are disabled (AISH_LUA=0)")
 		return
 	}
 	var args map[string]any
@@ -113,7 +113,7 @@ func (r *Repl) callLua(tc llm.ToolCall) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), r.cfg.LuaTimeout)
 	defer cancel()
-	out, err := r.skills.Call(ctx, tc.Func.Name, args)
+	out, err := r.luaTools.Call(ctx, tc.Func.Name, args)
 	if err != nil {
 		out = "error: " + err.Error()
 	}
@@ -132,20 +132,20 @@ func (r *Repl) appendToolError(tc llm.ToolCall, msg string) {
 	r.mu.Unlock()
 }
 
-// ---- Lua skills: host bridge ----
+// ---- Lua tools: host bridge ----
 
-// Exec implements skills.Host. It shows, classifies and audits the command
+// Exec implements luatools.Host. It shows, classifies and audits the command
 // exactly like a run_command proposal.
-func (r *Repl) Exec(ctx context.Context, argv []string) (skills.ExecResult, error) {
+func (r *Repl) Exec(ctx context.Context, argv []string) (luatools.ExecResult, error) {
 	if len(argv) == 0 {
-		return skills.ExecResult{Code: -1, Stderr: "empty argv"}, fmt.Errorf("empty argv")
+		return luatools.ExecResult{Code: -1, Stderr: "empty argv"}, fmt.Errorf("empty argv")
 	}
 	cmd := execx.ShellJoin(argv)
 	lv := r.policy.Classify(cmd)
 	r.scopeWarn(cmd)
 	fmt.Printf("%s%s%s%s\n", colorFor(lv), cBold, cmd, cNorm)
 	if !r.mayRun(cmd, lv) {
-		return skills.ExecResult{Code: -1, Stderr: "not run: user declined"}, nil
+		return luatools.ExecResult{Code: -1, Stderr: "not run: user declined"}, nil
 	}
 
 	cctx, cancel := context.WithTimeout(ctx, r.cfg.CmdTimeout)
@@ -163,7 +163,7 @@ func (r *Repl) Exec(ctx context.Context, argv []string) (skills.ExecResult, erro
 	} else if strings.TrimSpace(out+errOut) == "" {
 		fmt.Printf("%s(no output, exit 0)%s\n", cDim, cNorm)
 	}
-	return skills.ExecResult{Code: code, Stdout: out, Stderr: errOut}, nil
+	return luatools.ExecResult{Code: code, Stdout: out, Stderr: errOut}, nil
 }
 
 func (r *Repl) Print(text string) { fmt.Fprintln(os.Stdout, text) }
@@ -181,88 +181,85 @@ func (r *Repl) Env(name string) string { return os.Getenv(name) }
 
 // ---- hot reload ----
 
-func (r *Repl) reloadSkills() {
-	if r.skills == nil {
+func (r *Repl) reloadLuaTools() {
+	if r.luaTools == nil {
 		return
 	}
-	errs := r.skills.LoadDir()
+	errs := r.luaTools.LoadDir()
 	msg := ""
 	for _, err := range errs {
 		msg += err.Error() + "\n"
 	}
-	if msg != "" && msg != r.lastSkillErr {
-		fmt.Fprintf(os.Stderr, "%saish: skills: %s%s\n", cDim,
+	if msg != "" && msg != r.lastLuaToolErr {
+		fmt.Fprintf(os.Stderr, "%saish: lua tools: %s%s\n", cDim,
 			strings.TrimSpace(msg), cNorm)
 	}
-	r.lastSkillErr = msg
+	r.lastLuaToolErr = msg
 }
 
-// ---- :skill management ----
+// ---- :lua management ----
 
-func (r *Repl) dispatchSkillCommand(line string) int {
+func (r *Repl) dispatchLuaCommand(line string) int {
 	fields := strings.Fields(line)
 	if len(fields) == 0 {
 		return 0
 	}
-	if r.skills == nil {
-		fmt.Fprintf(os.Stderr, "%saish: Lua skills are disabled (AISH_LUA=0)%s\n", cDim, cNorm)
+	if r.luaTools == nil {
+		fmt.Fprintf(os.Stderr, "%saish: Lua tools are disabled (AISH_LUA=0)%s\n", cDim, cNorm)
 		return 1
 	}
 
 	switch fields[0] {
-	case ":skills":
-		return r.listSkills()
-	case ":skill":
+	case ":lua":
 		if len(fields) < 2 {
-			r.skillUsage()
-			return 1
+			return r.listLuaTools()
 		}
 		switch fields[1] {
 		case "list":
-			return r.listSkills()
+			return r.listLuaTools()
 		case "show":
 			if len(fields) < 3 {
-				r.skillUsage()
+				r.luaUsage()
 				return 1
 			}
-			return r.showSkill(fields[2])
+			return r.showLuaTool(fields[2])
 		case "save":
 			if len(fields) < 3 {
-				r.skillUsage()
+				r.luaUsage()
 				return 1
 			}
-			return r.saveSkill(fields[2])
+			return r.saveLuaTool(fields[2])
 		case "rm", "remove":
 			if len(fields) < 3 {
-				r.skillUsage()
+				r.luaUsage()
 				return 1
 			}
-			return r.removeSkill(fields[2])
+			return r.removeLuaTool(fields[2])
 		case "reload":
-			return r.reloadSkillsCommand()
+			return r.reloadLuaToolsCommand()
 		default:
-			r.skillUsage()
+			r.luaUsage()
 			return 1
 		}
 	default:
-		fmt.Fprintf(os.Stderr, "%saish: unknown command %s (try :skills)%s\n", cDim, fields[0], cNorm)
+		fmt.Fprintf(os.Stderr, "%saish: unknown command %s (try :lua)%s\n", cDim, fields[0], cNorm)
 		return 1
 	}
 }
 
-func (r *Repl) skillUsage() {
+func (r *Repl) luaUsage() {
 	fmt.Println("usage:")
-	fmt.Println("  :skills                 list session and saved Lua skills")
-	fmt.Println("  :skill show <name>      show metadata and source")
-	fmt.Println("  :skill save <name>      save a session skill")
-	fmt.Println("  :skill rm <name>        remove a saved skill")
-	fmt.Println("  :skill reload           re-read the skills directory")
+	fmt.Println("  :lua                    list session and saved Lua tools")
+	fmt.Println("  :lua show <name>         show metadata and source")
+	fmt.Println("  :lua save <name>         save a session tool")
+	fmt.Println("  :lua rm <name>           remove a saved tool")
+	fmt.Println("  :lua reload             re-read the Lua tools directory")
 }
 
-func (r *Repl) listSkills() int {
-	infos := r.skills.List()
+func (r *Repl) listLuaTools() int {
+	infos := r.luaTools.List()
 	if len(infos) == 0 {
-		fmt.Printf("%sno Lua skills loaded (dir: %s)%s\n", cDim, r.skills.Dir(), cNorm)
+		fmt.Printf("%sno Lua tools loaded (dir: %s)%s\n", cDim, r.luaTools.Dir(), cNorm)
 		return 0
 	}
 	fmt.Printf("%-20s %-26s %-8s %s\n", "NAME", "TOOL", "SCOPE", "DESCRIPTION")
@@ -280,13 +277,13 @@ func (r *Repl) listSkills() int {
 	return 0
 }
 
-func (r *Repl) showSkill(name string) int {
-	src, ok := r.skills.Source(name)
+func (r *Repl) showLuaTool(name string) int {
+	src, ok := r.luaTools.Source(name)
 	if !ok {
-		fmt.Fprintf(os.Stderr, "%saish: unknown skill %q%s\n", cDim, name, cNorm)
+		fmt.Fprintf(os.Stderr, "%saish: unknown Lua tool %q%s\n", cDim, name, cNorm)
 		return 1
 	}
-	for _, in := range r.skills.List() {
+	for _, in := range r.luaTools.List() {
 		if in.Name != name {
 			continue
 		}
@@ -306,8 +303,8 @@ func (r *Repl) showSkill(name string) int {
 	return 0
 }
 
-func (r *Repl) saveSkill(name string) int {
-	path, err := r.skills.Save(name)
+func (r *Repl) saveLuaTool(name string) int {
+	path, err := r.luaTools.Save(name)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%saish: %v%s\n", cDim, err, cNorm)
 		return 1
@@ -316,8 +313,8 @@ func (r *Repl) saveSkill(name string) int {
 	return 0
 }
 
-func (r *Repl) removeSkill(name string) int {
-	if err := r.skills.Remove(name); err != nil {
+func (r *Repl) removeLuaTool(name string) int {
+	if err := r.luaTools.Remove(name); err != nil {
 		fmt.Fprintf(os.Stderr, "%saish: %v%s\n", cDim, err, cNorm)
 		return 1
 	}
@@ -325,10 +322,10 @@ func (r *Repl) removeSkill(name string) int {
 	return 0
 }
 
-func (r *Repl) reloadSkillsCommand() int {
-	errs := r.skills.LoadDir()
+func (r *Repl) reloadLuaToolsCommand() int {
+	errs := r.luaTools.LoadDir()
 	if len(errs) == 0 {
-		fmt.Printf("%sskills reloaded from %s%s\n", cDim, r.skills.Dir(), cNorm)
+		fmt.Printf("%sLua tools reloaded from %s%s\n", cDim, r.luaTools.Dir(), cNorm)
 		return 0
 	}
 	for _, err := range errs {

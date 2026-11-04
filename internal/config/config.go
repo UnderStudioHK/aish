@@ -37,12 +37,12 @@ type Config struct {
 	PromptStyle string // "full" | "minimal"
 	PromptTmpl  string // optional template file
 
-	// Model-authored Lua skills
-	LuaEnabled   bool
-	SkillsDir    string
-	LuaTimeout   time.Duration
-	LuaMaxSkills int
-	LuaMaxBytes  int
+	// Model-authored Lua tools
+	LuaEnabled  bool
+	LuaDir      string
+	LuaTimeout  time.Duration
+	LuaMaxTools int
+	LuaMaxBytes int
 
 	// State
 	PromptFile  string
@@ -125,9 +125,9 @@ func Load() (*Config, error) {
 		PromptStyle:  envStr("AISH_PROMPT_STYLE", "full"),
 		PromptTmpl:   home(envStr("AISH_PROMPT_TMPL", "~/.config/aish/prompt.tmpl")),
 		LuaEnabled:   envBool("AISH_LUA", true),
-		SkillsDir:    home(envStr("AISH_SKILLS_DIR", "~/.config/aish/skills")),
+		LuaDir:       home(envStr("AISH_LUA_DIR", "~/.config/aish/lua")),
 		LuaTimeout:   envDur("AISH_LUA_TIMEOUT", 30*time.Second),
-		LuaMaxSkills: envInt("AISH_LUA_MAX_SKILLS", 8),
+		LuaMaxTools:  envInt("AISH_LUA_MAX_TOOLS", 8),
 		LuaMaxBytes:  envInt("AISH_LUA_MAX_BYTES", 64*1024),
 		StateDir:     home(envStr("AISH_STATE_DIR", filepath.Join(stateHome(), "aish"))),
 	}

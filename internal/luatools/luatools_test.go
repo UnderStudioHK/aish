@@ -1,4 +1,4 @@
-package skills
+package luatools
 
 import (
 	"context"
@@ -23,7 +23,7 @@ func (f *fakeHost) Log(string)        {}
 func (f *fakeHost) Cwd() string       { return "/tmp" }
 func (f *fakeHost) Env(string) string { return "" }
 
-func writeSkill(t *testing.T, dir, name, body string) string {
+func writeTool(t *testing.T, dir, name, body string) string {
 	t.Helper()
 	path := filepath.Join(dir, name+".lua")
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
@@ -34,7 +34,7 @@ func writeSkill(t *testing.T, dir, name, body string) string {
 
 func TestLoadCallAndSchema(t *testing.T) {
 	dir := t.TempDir()
-	writeSkill(t, dir, "echoer", `
+	writeTool(t, dir, "echoer", `
 return {
   name = "echoer",
   description = "echo a value",
@@ -114,7 +114,7 @@ return r.stdout`, map[string]any{
 
 func TestReloadAndRemove(t *testing.T) {
 	dir := t.TempDir()
-	path := writeSkill(t, dir, "ver", `
+	path := writeTool(t, dir, "ver", `
 return { name = "ver", description = "v1", run = function(args) return "one" end }`)
 	host := &fakeHost{}
 	m := NewManager(dir, time.Second, 4, 64*1024, host)
@@ -143,15 +143,15 @@ return { name = "ver", description = "v2", run = function(args) return "two" end
 		t.Fatal(err)
 	}
 	if _, ok := m.Source("ver"); ok {
-		t.Error("skill still present after remove")
+		t.Error("tool still present after remove")
 	}
 }
 
 func TestSandboxAndLimits(t *testing.T) {
 	dir := t.TempDir()
-	writeSkill(t, dir, "forbidden", `
+	writeTool(t, dir, "forbidden", `
 return { name = "forbidden", run = function(args) return os.execute("true") end }`)
-	writeSkill(t, dir, "slow", `
+	writeTool(t, dir, "slow", `
 return { name = "slow", run = function(args) while true do end end }`)
 	host := &fakeHost{}
 	m := NewManager(dir, 100*time.Millisecond, 4, 64*1024, host)
@@ -191,7 +191,7 @@ func TestNameAndCollisionRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := m.Propose("three", "", `return "3"`, nil); err == nil {
-		t.Error("session skill limit should fail")
+		t.Error("session tool limit should fail")
 	}
 }
 
@@ -221,7 +221,7 @@ func TestNormalizeParams(t *testing.T) {
 
 func TestPositionalArgsAlias(t *testing.T) {
 	dir := t.TempDir()
-	writeSkill(t, dir, "pos", `
+	writeTool(t, dir, "pos", `
 return {
   name = "pos",
   description = "positional",

@@ -8,7 +8,7 @@ import (
 
 	"github.com/UnderStudioHK/aish/internal/config"
 	"github.com/UnderStudioHK/aish/internal/llm"
-	"github.com/UnderStudioHK/aish/internal/skills"
+	"github.com/UnderStudioHK/aish/internal/luatools"
 )
 
 func toolCall(name, args string) llm.ToolCall {
@@ -20,21 +20,21 @@ func toolCall(name, args string) llm.ToolCall {
 	return tc
 }
 
-func TestProposeAndCallLuaSkill(t *testing.T) {
+func TestProposeAndCallLuaTool(t *testing.T) {
 	r := &Repl{
-		cfg:    &config.Config{LuaTimeout: time.Second},
-		skills: skills.NewManager(t.TempDir(), time.Second, 4, 64*1024, nil),
+		cfg:      &config.Config{LuaTimeout: time.Second},
+		luaTools: luatools.NewManager(t.TempDir(), time.Second, 4, 64*1024, nil),
 	}
-	defer r.skills.Close()
+	defer r.luaTools.Close()
 
 	proposal := `{"name":"hello","description":"say hi","code":"return \"hi\"","parameters":{"type":"object","properties":{}}}`
 	r.proposeLua(toolCall("propose_lua", proposal))
 
-	list := r.skills.List()
+	list := r.luaTools.List()
 	if len(list) != 1 || list[0].Name != "hello" {
-		t.Fatalf("skills = %+v", list)
+		t.Fatalf("tools = %+v", list)
 	}
-	if got := r.skills.ToolSchemas(); len(got) != 1 {
+	if got := r.luaTools.ToolSchemas(); len(got) != 1 {
 		t.Fatalf("schemas = %v", got)
 	}
 
@@ -54,10 +54,10 @@ func TestProposeAndCallLuaSkill(t *testing.T) {
 
 func TestProposeLuaImmediateArgs(t *testing.T) {
 	r := &Repl{
-		cfg:    &config.Config{LuaTimeout: time.Second},
-		skills: skills.NewManager(t.TempDir(), time.Second, 4, 64*1024, nil),
+		cfg:      &config.Config{LuaTimeout: time.Second},
+		luaTools: luatools.NewManager(t.TempDir(), time.Second, 4, 64*1024, nil),
 	}
-	defer r.skills.Close()
+	defer r.luaTools.Close()
 
 	proposal := `{"name":"echoarg","description":"echo arg","parameters":{"type":"object","properties":{"x":{"type":"string"}}},"code":"return args.x","args":{"x":"now"}}`
 	r.proposeLua(toolCall("propose_lua", proposal))

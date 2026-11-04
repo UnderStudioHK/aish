@@ -7,7 +7,7 @@ import (
 
 	"github.com/chzyer/readline"
 
-	"github.com/UnderStudioHK/aish/internal/skills"
+	"github.com/UnderStudioHK/aish/internal/luatools"
 )
 
 // shellCompleter completes command names at the first word and file/directory
@@ -15,10 +15,10 @@ import (
 // directory unless the token itself is absolute or starts with "~".
 type shellCompleter struct {
 	commands *readline.PrefixCompleter
-	skills   *skills.Manager
+	luaTools *luatools.Manager
 }
 
-func newShellCompleter(skillMgr *skills.Manager) *shellCompleter {
+func newShellCompleter(luaToolsMgr *luatools.Manager) *shellCompleter {
 	items := make([]readline.PrefixCompleterInterface, 0, 128)
 	seen := map[string]bool{}
 	add := func(w string) {
@@ -29,7 +29,7 @@ func newShellCompleter(skillMgr *skills.Manager) *shellCompleter {
 	}
 	add("!")
 	add("??")
-	for _, b := range []string{"cd", "pwd", "export", "exit", "help", "history", "env", ":skills", ":skill"} {
+	for _, b := range []string{"cd", "pwd", "export", "exit", "help", "history", "env", ":lua"} {
 		add(b)
 	}
 	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
@@ -46,7 +46,7 @@ func newShellCompleter(skillMgr *skills.Manager) *shellCompleter {
 	}
 	return &shellCompleter{
 		commands: readline.NewPrefixCompleter(items...),
-		skills:   skillMgr,
+		luaTools: luaToolsMgr,
 	}
 }
 
@@ -66,22 +66,22 @@ func (c *shellCompleter) Do(line []rune, pos int) ([][]rune, int) {
 	if first && !looksLikePath(token) {
 		return c.commands.Do(line, pos)
 	}
-	if len(before) > 0 && before[0] == ":skill" {
-		return c.completeSkillCommand(token, before)
+	if len(before) > 0 && before[0] == ":lua" {
+		return c.completeLuaCommand(token, before)
 	}
 	return completePathToken(token)
 }
 
-func (c *shellCompleter) completeSkillCommand(token string, before []string) ([][]rune, int) {
+func (c *shellCompleter) completeLuaCommand(token string, before []string) ([][]rune, int) {
 	if len(before) == 1 {
 		return completeWords(token, []string{"show", "save", "rm", "reload", "list"})
 	}
 	switch before[1] {
 	case "show", "save", "rm", "remove":
-		if c.skills == nil {
+		if c.luaTools == nil {
 			return nil, 0
 		}
-		infos := c.skills.List()
+		infos := c.luaTools.List()
 		names := make([]string, 0, len(infos))
 		for _, in := range infos {
 			names = append(names, in.Name)

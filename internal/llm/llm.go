@@ -134,7 +134,7 @@ var proposeLuaTool = map[string]any{
 			"pass `args` with the exact shape your parameters schema declares; " +
 			"aish runs it and returns the result in this tool message. Never run " +
 			"`aish.exec(...)` through run_command; `aish.exec` exists only inside " +
-			"Lua. The skill is not saved unless the user runs :skill save <name>.",
+			"Lua. The Lua tool is not saved unless the user runs :lua save <name>.",
 		"parameters": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -154,31 +154,31 @@ var runLuaTool = map[string]any{
 	"type": "function",
 	"function": map[string]any{
 		"name": "run_lua",
-		"description": "Run a registered Lua skill by name. After propose_lua " +
-			"registers a skill, call this with {\"name\":\"<skill>\",\"args\":{...}}. " +
-			"Use this instead of run_command for skills; aish.exec is a Lua API, " +
+		"description": "Run a registered Lua tool by name. After propose_lua " +
+			"registers a tool, call this with {\"name\":\"<tool>\",\"args\":{...}}. " +
+			"Use this instead of run_command for Lua tools; aish.exec is a Lua API, " +
 			"not a shell command.",
 		"parameters": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"name": map[string]any{"type": "string", "description": "registered skill name"},
-				"args": map[string]any{"type": "object", "description": "arguments matching the skill schema"},
+				"name": map[string]any{"type": "string", "description": "registered Lua tool name"},
+				"args": map[string]any{"type": "object", "description": "arguments matching the Lua tool schema"},
 			},
 			"required": []string{"name"},
 		},
 	},
 }
 
-// RunLuaTool is the stable entry point for using a registered Lua skill.
+// RunLuaTool is the stable entry point for using a registered Lua tool.
 func RunLuaTool() map[string]any { return runLuaTool }
 
 // BaseTools returns the tools that are always available. Callers append
-// session-specific skills and the Lua proposal tool when enabled.
+// session-specific Lua tools and the Lua proposal tool when enabled.
 func BaseTools() []map[string]any {
 	return []map[string]any{runCommandTool, findPackageTool}
 }
 
-// ProposeLuaTool is the meta-tool that lets the model author a session skill.
+// ProposeLuaTool is the meta-tool that lets the model author a session Lua tool.
 func ProposeLuaTool() map[string]any { return proposeLuaTool }
 
 type chatRequest struct {

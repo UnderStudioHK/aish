@@ -20,10 +20,10 @@ import (
 	"github.com/UnderStudioHK/aish/internal/execx"
 	"github.com/UnderStudioHK/aish/internal/history"
 	"github.com/UnderStudioHK/aish/internal/llm"
+	"github.com/UnderStudioHK/aish/internal/luatools"
 	"github.com/UnderStudioHK/aish/internal/prompt"
 	"github.com/UnderStudioHK/aish/internal/safety"
 	"github.com/UnderStudioHK/aish/internal/servermgmt"
-	"github.com/UnderStudioHK/aish/internal/skills"
 	"golang.org/x/term"
 )
 
@@ -67,9 +67,9 @@ type Repl struct {
 	lastOK     bool     // last batch fully succeeded
 	lastEmpty  bool     // last command produced no output
 
-	// model-authored Lua skills
-	skills       *skills.Manager
-	lastSkillErr string
+	// model-authored Lua tools
+	luaTools       *luatools.Manager
+	lastLuaToolErr string
 
 	// typo assistance cache
 	cmdOnce  sync.Once
@@ -101,8 +101,8 @@ func New(cfg *config.Config, dir *execx.Director, h *history.Store,
 		policy: safety.NewPolicy(cfg.Confirm), dict: map[string]bool{},
 		replay: map[string][]string{}}
 	if cfg.LuaEnabled {
-		r.skills = skills.NewManager(cfg.SkillsDir, cfg.LuaTimeout,
-			cfg.LuaMaxSkills, cfg.LuaMaxBytes, r)
+		r.luaTools = luatools.NewManager(cfg.LuaDir, cfg.LuaTimeout,
+			cfg.LuaMaxTools, cfg.LuaMaxBytes, r)
 	}
 	return r
 }
@@ -154,9 +154,9 @@ func (r *Repl) Run() (int, error) {
 	if err := os.MkdirAll(r.cfg.StateDir, 0o755); err != nil {
 		return 1, err
 	}
-	if r.skills != nil {
-		r.reloadSkills()
-		defer r.skills.Close()
+	if r.luaTools != nil {
+		r.reloadLuaTools()
+		defer r.luaTools.Close()
 	}
 
 	// Ctrl-C must not kill aish (the tty delivers it to the child too), but
@@ -181,7 +181,7 @@ func (r *Repl) Run() (int, error) {
 		Prompt:          r.promptString(),
 		HistoryFile:     r.cfg.HistoryPath,
 		HistoryLimit:    10000,
-		AutoComplete:    newShellCompleter(r.skills),
+		AutoComplete:    newShellCompleter(r.luaTools),
 		InterruptPrompt: cYell + "^C" + cNorm,
 	})
 	if err != nil {
@@ -223,8 +223,8 @@ func (r *Repl) Run() (int, error) {
 			return 1, err
 		}
 		line = strings.TrimSpace(line)
-		// Pick up skill edits made while the prompt was sitting idle.
-		r.reloadSkills()
+		// Pick up Lua tool edits made while the prompt was sitting idle.
+		r.reloadLuaTools()
 		if line == "" {
 			// Empty Enter: accept a queued follow-up, else "continue" in lazy mode.
 			if r.hasPending() {
@@ -282,7 +282,7 @@ func (r *Repl) Run() (int, error) {
 // dispatch routes one line: native fast path or the model's intent loop.
 func (r *Repl) dispatch(line string) int {
 	if strings.HasPrefix(strings.TrimSpace(line), ":") {
-		return r.dispatchSkillCommand(line)
+		return r.dispatchLuaCommand(line)
 	}
 	if fastNative(line) {
 		return r.dir.RunNative(line)

@@ -66,17 +66,17 @@ func Run(cfg *config.Config) int {
 		report(true, "prompt: built-in default (no %s)", cfg.PromptFile)
 	}
 
-	// Lua skills
+	// Lua tools
 	if cfg.LuaEnabled {
 		n := 0
-		if entries, err := os.ReadDir(cfg.SkillsDir); err == nil {
+		if entries, err := os.ReadDir(cfg.LuaDir); err == nil {
 			for _, e := range entries {
 				if !e.IsDir() && strings.HasSuffix(e.Name(), ".lua") {
 					n++
 				}
 			}
 		}
-		report(true, "lua: enabled (%s, %d saved skill(s), timeout %s)", cfg.SkillsDir, n, cfg.LuaTimeout)
+		report(true, "lua: enabled (%s, %d saved Lua tool(s), timeout %s)", cfg.LuaDir, n, cfg.LuaTimeout)
 	} else {
 		report(true, "lua: disabled (AISH_LUA=0)")
 	}

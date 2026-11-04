@@ -1,8 +1,8 @@
-// Package skills loads and runs small Lua tools that the model can author at
-// runtime. Lua is used as a narrow extension layer: skills get a deliberately
+// Package luatools loads and runs small Lua tools that the model can author at
+// runtime. Lua is used as a narrow extension layer: tools get a deliberately
 // small host API, never raw os/io access, and command execution still goes
 // through aish's safety classifier.
-package skills
+package luatools
 
 import (
 	"context"
@@ -31,7 +31,7 @@ var (
 	}
 )
 
-// ExecResult is one command run on behalf of a Lua skill.
+// ExecResult is one command run on behalf of a Lua tool.
 type ExecResult struct {
 	Code   int
 	Stdout string
@@ -47,7 +47,7 @@ type Host interface {
 	Env(name string) string
 }
 
-// Info describes a loaded skill for :skills / :skill show.
+// Info describes a loaded Lua tool for :lua show.
 type Info struct {
 	Name        string
 	Description string
@@ -62,7 +62,7 @@ type fileState struct {
 	size int64
 }
 
-type skill struct {
+type luaTool struct {
 	name        string
 	description string
 	params      map[string]any
@@ -78,48 +78,48 @@ type skill struct {
 	mu      sync.Mutex
 }
 
-func (s *skill) toolName() string { return ToolPrefix + s.name }
+func (s *luaTool) toolName() string { return ToolPrefix + s.name }
 
-func (s *skill) close() {
+func (s *luaTool) close() {
 	if s.L != nil {
 		s.L.Close()
 		s.L = nil
 	}
 }
 
-// Manager owns the session skill registry and the on-disk skills directory.
+// Manager owns the session Lua tool registry and the on-disk tools directory.
 type Manager struct {
-	dir       string
-	timeout   time.Duration
-	maxSkills int
-	maxBytes  int
-	host      Host
+	dir      string
+	timeout  time.Duration
+	maxTools int
+	maxBytes int
+	host     Host
 
-	mu     sync.RWMutex
-	skills map[string]*skill
-	files  map[string]fileState
-	errs   map[string]string
+	mu    sync.RWMutex
+	tools map[string]*luaTool
+	files map[string]fileState
+	errs  map[string]string
 }
 
-func NewManager(dir string, timeout time.Duration, maxSkills, maxBytes int, host Host) *Manager {
+func NewManager(dir string, timeout time.Duration, maxTools, maxBytes int, host Host) *Manager {
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
-	if maxSkills <= 0 {
-		maxSkills = 8
+	if maxTools <= 0 {
+		maxTools = 8
 	}
 	if maxBytes <= 0 {
 		maxBytes = 64 * 1024
 	}
 	return &Manager{
-		dir:       dir,
-		timeout:   timeout,
-		maxSkills: maxSkills,
-		maxBytes:  maxBytes,
-		host:      host,
-		skills:    map[string]*skill{},
-		files:     map[string]fileState{},
-		errs:      map[string]string{},
+		dir:      dir,
+		timeout:  timeout,
+		maxTools: maxTools,
+		maxBytes: maxBytes,
+		host:     host,
+		tools:    map[string]*luaTool{},
+		files:    map[string]fileState{},
+		errs:     map[string]string{},
 	}
 }
 
@@ -169,19 +169,19 @@ func (m *Manager) LoadDir() []error {
 			errs = append(errs, fmt.Errorf("%s: %w", e.Name(), err))
 			continue
 		}
-		if oldS := m.skills[name]; oldS != nil {
+		if oldS := m.tools[name]; oldS != nil {
 			oldS.close()
 		}
-		m.skills[name] = s
+		m.tools[name] = s
 		delete(m.errs, name)
 	}
 
-	for name, s := range m.skills {
+	for name, s := range m.tools {
 		if !s.persistent {
 			continue
 		}
 		if _, ok := seen[name]; !ok {
-			delete(m.skills, name)
+			delete(m.tools, name)
 			delete(m.errs, name)
 			s.close()
 		}
@@ -190,12 +190,12 @@ func (m *Manager) LoadDir() []error {
 	return errs
 }
 
-// Propose compiles a model-authored skill and registers it for this session.
+// Propose compiles a model-authored Lua tool and registers it for this session.
 // The source is kept so the user can persist it later with Save.
 func (m *Manager) Propose(name, description, code string, params map[string]any) (*Info, error) {
 	name = strings.ToLower(strings.TrimSpace(name))
 	if !nameRE.MatchString(name) {
-		return nil, fmt.Errorf("invalid skill name %q (use lowercase letters, digits, underscore; max 32)", name)
+		return nil, fmt.Errorf("invalid Lua tool name %q (use lowercase letters, digits, underscore; max 32)", name)
 	}
 	if reserved[name] {
 		return nil, fmt.Errorf("%q is a reserved tool name", name)
@@ -216,30 +216,30 @@ func (m *Manager) Propose(name, description, code string, params map[string]any)
 	}
 	src := buildSource(name, description, params, code)
 	if len(src) > m.maxBytes {
-		return nil, fmt.Errorf("generated skill too large (max %d bytes)", m.maxBytes)
+		return nil, fmt.Errorf("generated Lua tool too large (max %d bytes)", m.maxBytes)
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.skills[name]; ok {
-		return nil, fmt.Errorf("skill %q already exists", name)
+	if _, ok := m.tools[name]; ok {
+		return nil, fmt.Errorf("Lua tool %q already exists", name)
 	}
-	if len(m.skills) >= m.maxSkills {
-		return nil, fmt.Errorf("session skill limit reached (%d)", m.maxSkills)
+	if len(m.tools) >= m.maxTools {
+		return nil, fmt.Errorf("session Lua tool limit reached (%d)", m.maxTools)
 	}
 	s, err := m.loadLocked(name, src, "", false, "model")
 	if err != nil {
 		return nil, err
 	}
-	m.skills[name] = s
+	m.tools[name] = s
 	return infoOf(s, ""), nil
 }
 
-func (m *Manager) loadLocked(nameHint, source, path string, persistent bool, createdBy string) (*skill, error) {
+func (m *Manager) loadLocked(nameHint, source, path string, persistent bool, createdBy string) (*luaTool, error) {
 	if len(source) > m.maxBytes {
 		return nil, fmt.Errorf("source too large (max %d bytes)", m.maxBytes)
 	}
-	s := &skill{
+	s := &luaTool{
 		source:     source,
 		path:       path,
 		persistent: persistent,
@@ -272,7 +272,7 @@ func (m *Manager) loadLocked(nameHint, source, path string, persistent bool, cre
 	tbl, ok := ret.(*lua.LTable)
 	if !ok {
 		s.close()
-		return nil, fmt.Errorf("skill must return a table")
+		return nil, fmt.Errorf("Lua tool must return a table")
 	}
 
 	name := strings.TrimSpace(luaString(tbl.RawGetString("name")))
@@ -281,11 +281,11 @@ func (m *Manager) loadLocked(nameHint, source, path string, persistent bool, cre
 	}
 	if !nameRE.MatchString(name) {
 		s.close()
-		return nil, fmt.Errorf("invalid skill name %q", name)
+		return nil, fmt.Errorf("invalid Lua tool name %q", name)
 	}
 	if nameHint != "" && name != nameHint {
 		s.close()
-		return nil, fmt.Errorf("skill name %q does not match filename %q", name, nameHint)
+		return nil, fmt.Errorf("Lua tool name %q does not match filename %q", name, nameHint)
 	}
 	if reserved[name] {
 		s.close()
@@ -294,12 +294,12 @@ func (m *Manager) loadLocked(nameHint, source, path string, persistent bool, cre
 	if v := tbl.RawGetString("api"); v != lua.LNil {
 		if n, ok := v.(lua.LNumber); !ok || int(n) != 1 {
 			s.close()
-			return nil, fmt.Errorf("unsupported skill api version %v", v)
+			return nil, fmt.Errorf("unsupported Lua tool api version %v", v)
 		}
 	}
 	desc := strings.TrimSpace(luaString(tbl.RawGetString("description")))
 	if desc == "" {
-		desc = "Lua skill " + name
+		desc = "Lua tool " + name
 	}
 	params, err := luaParams(tbl.RawGetString("parameters"))
 	if err != nil {
@@ -310,7 +310,7 @@ func (m *Manager) loadLocked(nameHint, source, path string, persistent bool, cre
 	run, ok := tbl.RawGetString("run").(*lua.LFunction)
 	if !ok {
 		s.close()
-		return nil, fmt.Errorf("skill %q is missing a run(args) function", name)
+		return nil, fmt.Errorf("Lua tool %q is missing a run(args) function", name)
 	}
 
 	s.name = name
@@ -321,7 +321,7 @@ func (m *Manager) loadLocked(nameHint, source, path string, persistent bool, cre
 	return s, nil
 }
 
-func newSandbox(s *skill) (*lua.LState, error) {
+func newSandbox(s *luaTool) (*lua.LState, error) {
 	L := lua.NewState(lua.Options{
 		SkipOpenLibs:     true,
 		CallStackSize:    256,
@@ -343,7 +343,7 @@ func newSandbox(s *skill) (*lua.LState, error) {
 	return L, nil
 }
 
-func installAPI(L *lua.LState, s *skill) {
+func installAPI(L *lua.LState, s *luaTool) {
 	api := L.NewTable()
 	L.SetFuncs(api, map[string]lua.LGFunction{
 		"exec":        s.luaExec,
@@ -357,7 +357,7 @@ func installAPI(L *lua.LState, s *skill) {
 	L.SetGlobal("aish", api)
 }
 
-func (s *skill) luaExec(L *lua.LState) int {
+func (s *luaTool) luaExec(L *lua.LState) int {
 	tbl := L.CheckTable(1)
 	argv := make([]string, 0, tbl.Len())
 	for i := 1; i <= tbl.Len(); i++ {
@@ -391,27 +391,27 @@ func (s *skill) luaExec(L *lua.LState) int {
 	return 1
 }
 
-func (s *skill) luaPrint(L *lua.LState) int {
+func (s *luaTool) luaPrint(L *lua.LState) int {
 	s.host.Print(L.OptString(1, ""))
 	return 0
 }
 
-func (s *skill) luaLog(L *lua.LState) int {
+func (s *luaTool) luaLog(L *lua.LState) int {
 	s.host.Log(L.OptString(1, ""))
 	return 0
 }
 
-func (s *skill) luaCwd(L *lua.LState) int {
+func (s *luaTool) luaCwd(L *lua.LState) int {
 	L.Push(lua.LString(s.host.Cwd()))
 	return 1
 }
 
-func (s *skill) luaEnvGet(L *lua.LState) int {
+func (s *luaTool) luaEnvGet(L *lua.LState) int {
 	L.Push(lua.LString(s.host.Env(L.CheckString(1))))
 	return 1
 }
 
-func (s *skill) luaJSONEncode(L *lua.LState) int {
+func (s *luaTool) luaJSONEncode(L *lua.LState) int {
 	b, err := json.Marshal(fromLua(L.Get(1)))
 	if err != nil {
 		L.RaiseError("json_encode: %v", err)
@@ -421,7 +421,7 @@ func (s *skill) luaJSONEncode(L *lua.LState) int {
 	return 1
 }
 
-func (s *skill) luaJSONDecode(L *lua.LState) int {
+func (s *luaTool) luaJSONDecode(L *lua.LState) int {
 	var v any
 	if err := json.Unmarshal([]byte(L.CheckString(1)), &v); err != nil {
 		L.RaiseError("json_decode: %v", err)
@@ -431,7 +431,7 @@ func (s *skill) luaJSONDecode(L *lua.LState) int {
 	return 1
 }
 
-// Call runs a registered skill by its lua_* tool name.
+// Call runs a registered Lua tool by its lua_* tool name.
 func (m *Manager) Call(ctx context.Context, toolName string, args map[string]any) (string, error) {
 	if !strings.HasPrefix(toolName, ToolPrefix) {
 		return "", fmt.Errorf("not a Lua tool: %s", toolName)
@@ -442,18 +442,18 @@ func (m *Manager) Call(ctx context.Context, toolName string, args map[string]any
 	// state underneath us.
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	s := m.skills[name]
+	s := m.tools[name]
 	if s == nil {
-		return "", fmt.Errorf("unknown Lua skill %q", name)
+		return "", fmt.Errorf("unknown Lua tool %q", name)
 	}
 	return s.call(ctx, args)
 }
 
-func (s *skill) call(ctx context.Context, args map[string]any) (out string, err error) {
+func (s *luaTool) call(ctx context.Context, args map[string]any) (out string, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.L == nil {
-		return "", fmt.Errorf("skill %q is closed", s.name)
+		return "", fmt.Errorf("Lua tool %q is closed", s.name)
 	}
 	L := s.L
 	L.SetTop(0)
@@ -485,7 +485,7 @@ func (s *skill) call(ctx context.Context, args map[string]any) (out string, err 
 
 // argsTable builds the args table and also exposes positional aliases in the
 // schema's required order, so model-written `args[1]` still works.
-func (s *skill) argsTable(L *lua.LState, args map[string]any) *lua.LTable {
+func (s *luaTool) argsTable(L *lua.LState, args map[string]any) *lua.LTable {
 	tbl := toLua(L, args).(*lua.LTable)
 	seen := map[string]bool{}
 	var order []string
@@ -534,18 +534,18 @@ func resultString(v lua.LValue) (string, error) {
 	}
 }
 
-// ToolSchemas returns the OpenAI tool schemas for every loaded skill.
+// ToolSchemas returns the OpenAI tool schemas for every loaded Lua tool.
 func (m *Manager) ToolSchemas() []map[string]any {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	names := make([]string, 0, len(m.skills))
-	for name := range m.skills {
+	names := make([]string, 0, len(m.tools))
+	for name := range m.tools {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	out := make([]map[string]any, 0, len(names))
 	for _, name := range names {
-		s := m.skills[name]
+		s := m.tools[name]
 		out = append(out, map[string]any{
 			"type": "function",
 			"function": map[string]any{
@@ -558,23 +558,23 @@ func (m *Manager) ToolSchemas() []map[string]any {
 	return out
 }
 
-// List returns loaded skills sorted by name.
+// List returns loaded Lua tools sorted by name.
 func (m *Manager) List() []Info {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	names := make([]string, 0, len(m.skills)+len(m.errs))
-	for name := range m.skills {
+	names := make([]string, 0, len(m.tools)+len(m.errs))
+	for name := range m.tools {
 		names = append(names, name)
 	}
 	for name := range m.errs {
-		if _, ok := m.skills[name]; !ok {
+		if _, ok := m.tools[name]; !ok {
 			names = append(names, name)
 		}
 	}
 	sort.Strings(names)
 	out := make([]Info, 0, len(names))
 	for _, name := range names {
-		if s := m.skills[name]; s != nil {
+		if s := m.tools[name]; s != nil {
 			out = append(out, *infoOf(s, m.errs[name]))
 			continue
 		}
@@ -583,7 +583,7 @@ func (m *Manager) List() []Info {
 	return out
 }
 
-func infoOf(s *skill, errText string) *Info {
+func infoOf(s *luaTool, errText string) *Info {
 	return &Info{
 		Name:        s.name,
 		Description: s.description,
@@ -594,27 +594,27 @@ func infoOf(s *skill, errText string) *Info {
 	}
 }
 
-// Source returns the original Lua source for :skill show and Save.
+// Source returns the original Lua source for :lua show and Save.
 func (m *Manager) Source(name string) (string, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	s := m.skills[name]
+	s := m.tools[name]
 	if s == nil {
 		return "", false
 	}
 	return s.source, true
 }
 
-// Save writes an ephemeral skill to the skills directory.
+// Save writes an ephemeral Lua tool to the tools directory.
 func (m *Manager) Save(name string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	s := m.skills[name]
+	s := m.tools[name]
 	if s == nil {
-		return "", fmt.Errorf("unknown skill %q", name)
+		return "", fmt.Errorf("unknown Lua tool %q", name)
 	}
 	if s.source == "" {
-		return "", fmt.Errorf("skill %q has no source", name)
+		return "", fmt.Errorf("Lua tool %q has no source", name)
 	}
 	if err := os.MkdirAll(m.dir, 0o755); err != nil {
 		return "", err
@@ -631,20 +631,20 @@ func (m *Manager) Save(name string) (string, error) {
 	return path, nil
 }
 
-// Remove deletes an on-disk skill (and any ephemeral session copy).
+// Remove deletes an on-disk Lua tool (and any ephemeral session copy).
 func (m *Manager) Remove(name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	s := m.skills[name]
+	s := m.tools[name]
 	if s == nil {
-		return fmt.Errorf("unknown skill %q", name)
+		return fmt.Errorf("unknown Lua tool %q", name)
 	}
 	if s.persistent && s.path != "" {
 		if err := os.Remove(s.path); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 	}
-	delete(m.skills, name)
+	delete(m.tools, name)
 	delete(m.files, name)
 	delete(m.errs, name)
 	s.close()
@@ -655,9 +655,9 @@ func (m *Manager) Remove(name string) error {
 func (m *Manager) Close() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for name, s := range m.skills {
+	for name, s := range m.tools {
 		s.close()
-		delete(m.skills, name)
+		delete(m.tools, name)
 	}
 }
 

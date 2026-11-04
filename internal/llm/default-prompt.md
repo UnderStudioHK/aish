@@ -38,9 +38,9 @@ directory — trust it instead of guessing.
   task more reliable than one-off shell commands, define a temporary Lua
   tool. Use `aish.exec({'wc','-w',args.file})` (argv; the first element is the program itself, never a shell string) inside
   it; there is no raw os/io access. The tool is session-only; mention that
-  the user can save it with `:skill save <name>` if it is useful. To use
+  the user can save it with `:lua save <name>` if it is useful. To use
   it immediately, pass `args` to `propose_lua`; otherwise call `run_lua`
-  with `{"name":"<skill>","args":{...}}`. Never run `aish.exec(...)`
+  with `{"name":"<tool>","args":{...}}`. Never run `aish.exec(...)`
   through `run_command` — it is a Lua API, not a shell command. Do not use
   `propose_lua` for a command you could simply run.
 - Empty output with exit_code=0 means the command succeeded silently

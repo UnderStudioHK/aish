@@ -52,7 +52,7 @@ aish/
   internal/safety/             classifier + confirmation UI
   internal/servermgmt/         llama-server health check, spawn, stop
   internal/pkgfind/            dnf/flatpak package resolution
-  internal/skills/             model-authored Lua runtime, registry, hot reload
+  internal/luatools/           model-authored Lua runtime, registry, hot reload
   internal/history/            persistent history
   internal/config/             all knobs (below), prompt file loader
   third_party/readline/        vendored line editor with ESC-timeout patch
@@ -81,11 +81,11 @@ Precedence: **flag > env > `~/.config/aish/config.toml` (optional) > default**.
 | Data dir | `AISH_HOME` | `$XDG_DATA_HOME/aish` | models + llama.cpp |
 | State dir | `AISH_STATE_DIR` | `$XDG_STATE_HOME/aish` | history + audit log |
 | System prompt | `AISH_PROMPT_FILE` | `~/.config/aish/prompt.md` | missing → embedded default |
-| Lua skills | `AISH_LUA` | `1` | enable model-authored Lua (`0` disables) |
-| Skills dir | `AISH_SKILLS_DIR` | `~/.config/aish/skills` | saved `.lua` skills |
-| Lua timeout | `AISH_LUA_TIMEOUT` | `30s` | per-skill call |
-| Session skill limit | `AISH_LUA_MAX_SKILLS` | `8` | max loaded skills |
-| Skill source limit | `AISH_LUA_MAX_BYTES` | `65536` | max bytes per skill |
+| Lua tools | `AISH_LUA` | `1` | enable model-authored Lua (`0` disables) |
+| Tools dir | `AISH_LUA_DIR` | `~/.config/aish/lua` | saved `.lua` tools |
+| Lua timeout | `AISH_LUA_TIMEOUT` | `30s` | per-tool call |
+| Session tool limit | `AISH_LUA_MAX_TOOLS` | `8` | max loaded tools |
+| Tool source limit | `AISH_LUA_MAX_BYTES` | `65536` | max bytes per tool |
 
 The system prompt is byte-identical across calls (KV prefix cache hits). Only the
 persona/rules section is user-replaceable; tool/safety contract is enforced
@@ -148,10 +148,10 @@ client-side and cannot be weakened by the prompt.
 - **Tab completion** (done): command names at the first word, cwd-relative
   file/directory paths everywhere else; `~`, quotes, escaped spaces and
   `--flag=value` supported. Unit-tested and verified through a PTY.
-- **Lua skills** (done): model-authored `propose_lua`, stable `run_lua`
-  execution, session-only registration, explicit `:skill save`, hot reload,
+- **Lua tools** (done): model-authored `propose_lua`, stable `run_lua`
+  execution, session-only registration, explicit `:lua save`, hot reload,
   no shadowing, narrow gopher-lua sandbox. Design:
-  [`docs/lua-skills.md`](docs/lua-skills.md).
+  [`docs/lua-tools.md`](docs/lua-tools.md).
 - **Packaging** (done): portable XDG defaults with legacy fallback,
   `install.sh` (release binary or source build, llama.cpp Vulkan/CPU, model
   download + SHA-256), Makefile, MIT license, CI and release workflows.

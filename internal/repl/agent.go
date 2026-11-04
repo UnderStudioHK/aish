@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/UnderStudioHK/aish/internal/llm"
+	"github.com/UnderStudioHK/aish/internal/luatools"
 	"github.com/UnderStudioHK/aish/internal/pkgfind"
-	"github.com/UnderStudioHK/aish/internal/skills"
 )
 
 // ---- state helpers (all fields guarded by r.mu) ----
@@ -78,9 +78,9 @@ func (r *Repl) llmTurn(ctx context.Context, msgs []llm.Message, useTools bool, e
 	var tools []map[string]any
 	if useTools {
 		tools = append(tools, llm.BaseTools()...)
-		if r.skills != nil {
+		if r.luaTools != nil {
 			tools = append(tools, llm.ProposeLuaTool(), llm.RunLuaTool())
-			tools = append(tools, r.skills.ToolSchemas()...)
+			tools = append(tools, r.luaTools.ToolSchemas()...)
 		}
 	}
 	r.llmMu.Lock()
@@ -256,7 +256,7 @@ func (r *Repl) executeCalls(calls []llm.ToolCall) bool {
 			continue
 		}
 		// Model-authored Lua: registration is ephemeral and side-effect free;
-		// the skill runs only via run_lua, lua_<name>, or explicit args.
+		// the Lua tool runs only via run_lua, lua_<name>, or explicit args.
 		if tc.Func.Name == "propose_lua" {
 			r.proposeLua(tc)
 			continue
@@ -265,7 +265,7 @@ func (r *Repl) executeCalls(calls []llm.ToolCall) bool {
 			r.runLua(tc)
 			continue
 		}
-		if strings.HasPrefix(tc.Func.Name, skills.ToolPrefix) {
+		if strings.HasPrefix(tc.Func.Name, luatools.ToolPrefix) {
 			r.callLua(tc)
 			continue
 		}
@@ -651,7 +651,7 @@ func describeCalls(calls []llm.ToolCall) string {
 		}
 		_ = llm.DecodeArgs(calls[0].Func.Arguments, &p)
 		cmd = "run_lua " + p.Name
-	case strings.HasPrefix(calls[0].Func.Name, skills.ToolPrefix):
+	case strings.HasPrefix(calls[0].Func.Name, luatools.ToolPrefix):
 		cmd = calls[0].Func.Name
 	default:
 		if c, ok := llm.CommandOf(calls[0]); ok {
