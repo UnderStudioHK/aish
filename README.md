@@ -38,6 +38,7 @@ Filesystem      Size  Used Avail Use% Mounted on
 | **Agentic loop** | The model calls `run_command` and `find_package` tools, sees output and exit codes, and can take several steps (`AISH_MAX_STEPS`). |
 | **Live output** | Command output streams straight to your terminal. Silent success and failures are both reported (`(no output, exit 0)`, `✗ exit 1`). |
 | **Instant prompt** | The prompt returns as soon as a command finishes; follow-up reasoning happens in the background. Accept a queued step with **Enter**, dismiss it with **Esc** or any input. |
+| **Visible activity** | An animated block shows when the model is thinking: a status line with elapsed time for foreground turns, and a pulsing block in the prompt during background follow-ups. |
 | **Safety gates** | Go-side classifier: safe commands auto-run, risky ones ask `y`, destructive ones require typing `yes`. `e` opens `$EDITOR` before running. The prompt cannot weaken these. |
 | **Grounded in your machine** | Live cwd/OS/package-manager context, `dnf`/`flatpak` package lookup before installs, typo hints (`gti` → `git`), and cwd-scoped answers instead of scanning `$HOME`. |
 | **Shell state persists** | `cd` and `export` are applied in-process, so they survive across prompts and agent steps. |
@@ -314,7 +315,7 @@ install.sh           end-user installer
 
 ## Status
 
-Proof of concept, version `0.2.0`. Working: native fast path, agentic intent
+Proof of concept, version `0.2.1`. Working: native fast path, agentic intent
 path, safety gates, follow-ups, tab completion, model-authored Lua skills,
 grounding, prompt, installer, CI. Not yet: scripting/automation mode,
 non-Linux support, process-isolated skill sandboxing, additional package

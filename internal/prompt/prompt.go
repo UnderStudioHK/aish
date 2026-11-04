@@ -10,13 +10,14 @@ import (
 
 // State is everything the prompt may display.
 type State struct {
-	Cwd     string // absolute working directory
-	Home    string
-	Exit    int  // last exit code (0 hides the segment)
-	Pending bool // a follow-up proposal is queued
-	Busy    bool // a follow-up turn is in flight
-	Root    bool // running as root
-	Color   bool // emit ANSI colors
+	Cwd       string // absolute working directory
+	Home      string
+	Exit      int    // last exit code (0 hides the segment)
+	Pending   bool   // a follow-up proposal is queued
+	Busy      bool   // a model turn is in flight
+	BusyFrame string // animated frame for the busy segment
+	Root      bool   // running as root
+	Color     bool   // emit ANSI colors
 
 	// Filled by Git when inside a work tree.
 	Branch   string
@@ -99,7 +100,11 @@ func Render(s State) string {
 		return renderTemplate(s)
 	}
 	if s.Style == "minimal" {
-		return color(s, segment(s, "path"), cCyan, cBold) + " " + glyph(s) + " "
+		out := color(s, segment(s, "path"), cCyan, cBold)
+		if s.Busy {
+			out += " " + color(s, busyGlyph(s), cDim)
+		}
+		return out + " " + glyph(s) + " "
 	}
 	segs := []string{color(s, Shorten(s.Cwd, s.Home), cCyan, cBold)}
 	if g := gitSegment(s); g != "" {
@@ -110,6 +115,9 @@ func Render(s State) string {
 	}
 	if s.Pending {
 		segs = append(segs, color(s, "⏎", cYellow))
+	}
+	if s.Busy {
+		segs = append(segs, color(s, busyGlyph(s), cDim))
 	}
 	return strings.Join(segs, "  ") + " " + glyph(s) + " "
 }
@@ -140,7 +148,7 @@ func segment(s State, name string) string {
 		}
 	case "busy":
 		if s.Busy {
-			return "⋯"
+			return busyGlyph(s)
 		}
 	case "user":
 		return s.User
@@ -165,6 +173,15 @@ func gitSegment(s State) string {
 		out += color(s, "*", cYellow)
 	}
 	return out
+}
+
+// busyGlyph returns the animated block for an in-flight model turn, with a
+// static fallback for callers that only set Busy.
+func busyGlyph(s State) string {
+	if s.BusyFrame != "" {
+		return s.BusyFrame
+	}
+	return "⋯"
 }
 
 func glyphRune(s State) rune {

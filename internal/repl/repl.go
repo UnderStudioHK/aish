@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/chzyer/readline"
@@ -82,6 +83,13 @@ type Repl struct {
 	promptActive bool
 	rl           *readline.Instance
 
+	// animated "model is working" indicator (busy fields are guarded by mu)
+	busyAnim  bool
+	busyFrame string
+	actMu     sync.Mutex
+	actStop   chan struct{}
+	actGen    atomic.Uint64
+
 	confirmOnce sync.Once
 	confirmRL   *readline.Instance
 	confirmErr  error
@@ -108,7 +116,8 @@ func (r *Repl) promptString() string {
 
 	r.mu.Lock()
 	pending := len(r.pending) > 0
-	busy := r.inFlight
+	busy := r.inFlight || r.busyAnim
+	frame := r.busyFrame
 	r.mu.Unlock()
 
 	git := prompt.GitFor(wd)
@@ -122,20 +131,21 @@ func (r *Repl) promptString() string {
 	}
 
 	return prompt.Render(prompt.State{
-		Cwd:      wd,
-		Home:     home,
-		Exit:     r.lastShown,
-		Pending:  pending,
-		Busy:     busy,
-		Root:     os.Geteuid() == 0,
-		Color:    color,
-		Branch:   git.Branch,
-		Detached: git.Detached,
-		Dirty:    git.Dirty,
-		Style:    r.cfg.PromptStyle,
-		Template: tmpl,
-		User:     user,
-		Host:     host,
+		Cwd:       wd,
+		Home:      home,
+		Exit:      r.lastShown,
+		Pending:   pending,
+		Busy:      busy,
+		BusyFrame: frame,
+		Root:      os.Geteuid() == 0,
+		Color:     color,
+		Branch:    git.Branch,
+		Detached:  git.Detached,
+		Dirty:     git.Dirty,
+		Style:     r.cfg.PromptStyle,
+		Template:  tmpl,
+		User:      user,
+		Host:      host,
 	})
 }
 
@@ -403,7 +413,9 @@ func (r *Repl) askOnly(q string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), r.cfg.LLMTimeout)
 	defer cancel()
+	stopThinking := r.startActivity("answering")
 	msg, err := r.llmTurn(ctx, []llm.Message{{Role: "user", Content: q}}, false, "")
+	stopThinking()
 	if err != nil {
 		fmt.Printf("%saish: %v%s\n", cRed, err, cNorm)
 		return

@@ -129,6 +129,18 @@ Controls:
 Steps are bounded by `AISH_MAX_STEPS` (initial batch = 1, each accepted
 follow-up +1). Exhaustion prints `aish: stopped after N steps`.
 
+### Activity indicator
+
+While a model turn is in flight, a pulsing block (`▁▂▃▄▅▆▇█`) shows that
+work is happening:
+
+- **foreground turn** — a dim status line at the bottom of the terminal,
+  e.g. `▅ thinking  2.4s`, cleared before the answer prints;
+- **background follow-up** — the block replaces the busy marker in the prompt
+  and animates in place, so the prompt stays usable while you type.
+
+The indicator is suppressed when stdout is not a terminal.
+
 ## 5. Safety
 
 Every proposal is displayed. The classifier rates commands:

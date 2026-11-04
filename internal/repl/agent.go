@@ -22,6 +22,7 @@ import (
 // proposals with synthetic tool results (keeping the conversation valid),
 // and resets the step counter for a fresh user request.
 func (r *Repl) beginNewInput() {
+	r.stopActivityNow()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.epoch++
@@ -166,7 +167,9 @@ func (r *Repl) handleIntent(request string) int {
 
 	debugDump("intent", msgs)
 	tctx, cancel := context.WithTimeout(context.Background(), r.cfg.LLMTimeout)
+	stopThinking := r.startActivity("thinking")
 	asMsg, err := r.llmTurn(tctx, msgs, true, r.typoHint(request))
+	stopThinking()
 	cancel()
 	if err != nil {
 		fmt.Printf("%saish: %v%s\n", cRed, err, cNorm)
@@ -492,6 +495,7 @@ func (r *Repl) startFollowUp() {
 	go func() {
 		defer cancel()
 		start := time.Now()
+		stopThinking := r.startActivity("thinking")
 		msg, err := r.llmTurn(ctx, msgs, true, "")
 		r.debugTime("follow-up", start)
 		if err == nil {
@@ -506,6 +510,7 @@ func (r *Repl) startFollowUp() {
 				r.cancel = nil
 			}
 			r.mu.Unlock()
+			stopThinking()
 			if !stale && ctx.Err() == nil {
 				r.showHint(fmt.Sprintf("aish: follow-up failed: %v", err))
 			}
@@ -517,6 +522,7 @@ func (r *Repl) startFollowUp() {
 		r.mu.Lock()
 		if r.epoch != ep {
 			r.mu.Unlock()
+			stopThinking()
 			return
 		}
 		r.inFlight = false
@@ -538,6 +544,7 @@ func (r *Repl) startFollowUp() {
 		}
 		emptyOut := r.lastEmpty
 		r.mu.Unlock()
+		stopThinking()
 
 		if dup {
 			fmt.Printf("%s↳ repeated command ignored%s\n", cDim, cNorm)
@@ -572,7 +579,9 @@ func (r *Repl) continueSync() {
 	msgs := r.talkCopy()
 	start := time.Now()
 	tctx, cancel := context.WithTimeout(context.Background(), r.cfg.LLMTimeout)
+	stopThinking := r.startActivity("thinking")
 	msg, err := r.llmTurn(tctx, msgs, true, "")
+	stopThinking()
 	cancel()
 	r.debugTime("continue", start)
 	if err != nil {

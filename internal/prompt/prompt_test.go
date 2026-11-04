@@ -77,3 +77,23 @@ func TestGitForNonRepo(t *testing.T) {
 		t.Errorf("non-repo should have no branch: %+v", info)
 	}
 }
+
+func TestRenderBusyBlock(t *testing.T) {
+	s := State{Cwd: "/tmp", Home: "/home/u", Busy: true, BusyFrame: "█"}
+	if got := Render(s); !strings.Contains(got, "█") {
+		t.Errorf("full prompt missing busy frame: %q", got)
+	}
+	s.Style = "minimal"
+	if got := Render(s); !strings.Contains(got, "█") {
+		t.Errorf("minimal prompt missing busy frame: %q", got)
+	}
+	s.Template = "[{busy}] {cwd}"
+	if got := Render(s); !strings.Contains(got, "[█]") {
+		t.Errorf("template prompt missing busy frame: %q", got)
+	}
+	// A caller that only sets Busy keeps the static fallback.
+	s = State{Cwd: "/tmp", Home: "/home/u", Busy: true}
+	if got := Render(s); !strings.Contains(got, "⋯") {
+		t.Errorf("static busy fallback missing: %q", got)
+	}
+}
