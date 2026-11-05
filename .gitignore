@@ -4,3 +4,8 @@ dist/
 *.part
 *.log
 .DS_Store
+
+# Scratch / working files — these belong in docs/, not the repo.
+# Maintained by the repo-file-structure-audit + stray-file-cleanup.py.
+.scratch/
+.scratch-*
